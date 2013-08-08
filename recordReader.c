@@ -328,7 +328,7 @@ static int readByte(StreamReader* intReaderState, uint8_t *result)
  * Reads an integer from the stream.
  * Conversion from mixed sign to actual sign isn't done.
  */
-static int readInteger(Type__Kind kind, StreamReader* intReaderState, int64_t *result)
+static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *result)
 {
 	*result = 0;
 	long bytesRead = 0;
@@ -450,10 +450,11 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	StreamReader *nanoSecondsReader = NULL;
 
 	time_t millis;
-	int64_t wordLength = 0;
-	int64_t index = 0;
-	int64_t seconds = 0;
-	int64_t nanoSeconds = 0;
+	uint64_t wordLength = 0;
+	uint64_t index = 0;
+	uint64_t seconds = 0;
+	uint64_t nanoSeconds = 0;
+	uint64_t data64 = 0;
 	int dictionaryIterator = 0;
 	char isPresent = 0;
 	int result = 0;
@@ -474,7 +475,7 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	case TYPE__KIND__BOOLEAN:
 		booleanStreamReader = &primitiveReader->readers[DATA];
 		value->value8 = readBoolean(booleanStreamReader);
-		result = 1;
+		result = value->value8 < 0 ? -1 : 0;
 		break;
 	case TYPE__KIND__BYTE:
 		byteStreamReader = &primitiveReader->readers[DATA];
@@ -484,8 +485,8 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	case TYPE__KIND__INT:
 	case TYPE__KIND__LONG:
 		integerStreamReader = &primitiveReader->readers[DATA];
-		result = readInteger(reader->kind, integerStreamReader, &value->value64);
-		value->value64 = toSignedInteger(value->value64);
+		result = readInteger(reader->kind, integerStreamReader, &data64);
+		value->value64 = toSignedInteger(data64);
 		break;
 	case TYPE__KIND__FLOAT:
 		fpStreamReader = &primitiveReader->readers[DATA];
@@ -572,7 +573,7 @@ static int readListElement(Reader* reader, Field* field, int* length)
 	ListReader* listReader = reader->fieldReader;
 	Reader* itemReader = &listReader->itemReader;
 	StreamReader* presentStreamReader = &reader->presentBitReader;
-	int64_t listSize = 0;
+	uint64_t listSize = 0;
 	int result = 0;
 	int iterator = 0;
 	char isPresent = 0;
@@ -597,8 +598,9 @@ static int readListElement(Reader* reader, Field* field, int* length)
 	}
 
 	field->list = malloc(sizeof(FieldValue) * listSize);
-	field->listItemSizes = NULL;
 	*length = (int) listSize;
+	field->isItemNull = malloc(sizeof(char) * listSize);
+
 	if (itemReader->kind == TYPE__KIND__BINARY)
 	{
 		field->listItemSizes = malloc(sizeof(int) * listSize);
@@ -608,12 +610,12 @@ static int readListElement(Reader* reader, Field* field, int* length)
 	{
 		value = &field->list[iterator];
 		result = readPrimitiveType(itemReader, value, &field->listItemSizes[iterator]);
-//		TODO There can be null elements in the list
-		if (result)
+		if (result < 0)
 		{
 			/* error while reading the list item */
 			return 1;
 		}
+		field->isItemNull[iterator] = result;
 	}
 
 	return 0;
@@ -621,6 +623,10 @@ static int readListElement(Reader* reader, Field* field, int* length)
 
 int readField(Reader* reader, Field* field, int* length)
 {
+	field->list = NULL;
+	field->listItemSizes = NULL;
+	field->isItemNull = NULL;
+
 	switch (reader->kind)
 	{
 	case TYPE__KIND__LIST:

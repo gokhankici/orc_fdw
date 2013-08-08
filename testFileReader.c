@@ -10,8 +10,10 @@ int printAllData(StructReader* structReader, int noOfRows)
 	int columnNo = 0;
 	Field field;
 	int length = 0;
+	int listLength = 0;
 	int isNull = 0;
 	int iterator = 0;
+	Type__Kind listItemKind = 0;
 
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
@@ -27,15 +29,31 @@ int printAllData(StructReader* structReader, int noOfRows)
 			{
 				if (reader->kind == TYPE__KIND__LIST)
 				{
+					listLength = length;
+					listItemKind = ((ListReader*)reader->fieldReader)->itemReader.kind;
 					printf("[");
-					for (iterator = 0; iterator < length; ++iterator)
+					for (iterator = 0; iterator < listLength; ++iterator)
 					{
-
+						length = field.listItemSizes ? field.listItemSizes[iterator] : 0;
+						isNull = field.isItemNull[iterator];
+						if (isNull)
+						{
+							printf("(NULL),");
+						}
+						else
+						{
+							printFieldValue(&field.list[iterator], listItemKind, length);
+							printf(",");
+						}
 					}
+					printf("]|");
+					free(field.list);
+					free(field.isItemNull);
+					free(field.listItemSizes);
 				}
 				else
 				{
-					printFieldValue(&field.value, reader->kind);
+					printFieldValue(&field.value, reader->kind, length);
 					printf("|");
 				}
 			}
@@ -52,8 +70,8 @@ int printAllData(StructReader* structReader, int noOfRows)
 
 int main(int argc, char **argv)
 {
-	/*FILE* orcFile = fopen("/home/gokhan/orc-files/output.orc", "r");*/
-	FILE* orcFile = fopen("short.orc", "r");
+	FILE* orcFile = fopen("/home/gokhan/orc-files/bigrow1.orc", "r");
+//	FILE* orcFile = fopen("short.orc", "r");
 	StructReader structReader;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;

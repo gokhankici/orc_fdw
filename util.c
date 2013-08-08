@@ -7,25 +7,26 @@
 
 #define TIMESPEC_BUFFER_LENGTH 30
 
-int timespecToStr(char* timespecBuffer, struct timespec *ts) {
-    int ret = 0;
-    int len = TIMESPEC_BUFFER_LENGTH;
-    struct tm t;
+int timespecToStr(char* timespecBuffer, struct timespec *ts)
+{
+	int ret = 0;
+	int len = TIMESPEC_BUFFER_LENGTH;
+	struct tm t;
 
-    tzset();
-    if (localtime_r(&(ts->tv_sec), &t) == NULL)
-        return 1;
+	tzset();
+	if (localtime_r(&(ts->tv_sec), &t) == NULL)
+		return 1;
 
-    ret = strftime(timespecBuffer, len, "%F %T", &t);
-    if (ret == 0)
-        return 2;
-    len -= ret - 1;
+	ret = strftime(timespecBuffer, len, "%F %T", &t);
+	if (ret == 0)
+		return 2;
+	len -= ret - 1;
 
-    ret = snprintf(&timespecBuffer[strlen(timespecBuffer)], len, ".%09ld", ts->tv_nsec);
-    if (ret >= len)
-        return 3;
+	ret = snprintf(&timespecBuffer[strlen(timespecBuffer)], len, ".%09ld", ts->tv_nsec);
+	if (ret >= len)
+		return 3;
 
-    return 0;
+	return 0;
 }
 
 int inf(uint8_t *input, unsigned int inputSize, uint8_t **output, unsigned int *outputSize)
@@ -76,26 +77,30 @@ int inf(uint8_t *input, unsigned int inputSize, uint8_t **output, unsigned int *
 	return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
 }
 
-void printFieldValue(FieldValue* value, Type__Kind kind)
+void printFieldValue(FieldValue* value, Type__Kind kind, int length)
 {
 	char* timespecBuffer = NULL;
+	uint8_t *binaryValues = NULL;
+	int iterator = 0;
 
 	switch (kind)
 	{
 	case TYPE__KIND__BOOLEAN:
+		printf("%d", (int)value->value8);
+		break;
 	case TYPE__KIND__BYTE:
-		printf("%c", value->value8);
+		printf("%.2X", value->value8);
 		break;
 	case TYPE__KIND__SHORT:
 	case TYPE__KIND__INT:
 	case TYPE__KIND__LONG:
-		printf("%ld",value->value64);
+		printf("%ld", value->value64);
 		break;
 	case TYPE__KIND__FLOAT:
-		printf("%.2f",value->floatValue);
+		printf("%.2f", value->floatValue);
 		break;
 	case TYPE__KIND__DOUBLE:
-		printf("%.2lf",value->doubleValue);
+		printf("%.2lf", value->doubleValue);
 		break;
 	case TYPE__KIND__STRING:
 		printf("%s", value->binary);
@@ -104,6 +109,13 @@ void printFieldValue(FieldValue* value, Type__Kind kind)
 		timespecBuffer = malloc(TIMESPEC_BUFFER_LENGTH);
 		timespecToStr(timespecBuffer, &value->time);
 		printf("%s", timespecBuffer);
+		break;
+	case TYPE__KIND__BINARY:
+		binaryValues = (uint8_t*) value->binary;
+		for (iterator = 0; iterator < length; ++iterator)
+		{
+			printf("%.2X", binaryValues[iterator]);
+		}
 		break;
 	default:
 		break;

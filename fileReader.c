@@ -135,12 +135,13 @@ int initStripeReader(Footer* footer, StructReader* reader)
 			listItemReader->columnNo = type->subtypes[0];
 			listItemReader->kind = types[listItemReader->columnNo]->kind;
 
-			if(isComplexType(listItemReader->kind))
+			if (isComplexType(listItemReader->kind))
 			{
 				/* only list of primitive types is supported */
 				return 1;
 			}
 
+			listItemReader->fieldReader = malloc(sizeof(PrimitiveReader));
 			primitiveReader = listItemReader->fieldReader;
 
 			for (j = 0; j < MAX_STREAM_COUNT; ++j)
@@ -227,8 +228,6 @@ int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* st
 			stream = stripeFooter->streams[++streamNo];
 		}
 
-		columnEncoding = stripeFooter->columns[reader->columnNo];
-
 		if (reader->kind == TYPE__KIND__LIST)
 		{
 			/* if the type is list, first check for present stream as always */
@@ -261,6 +260,7 @@ int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* st
 			reader = &listReader->itemReader;
 		}
 
+		columnEncoding = stripeFooter->columns[reader->columnNo];
 		reader->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
 		if (reader->hasPresentBitReader)
 		{

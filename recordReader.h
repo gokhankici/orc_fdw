@@ -26,7 +26,7 @@
 #define STREAM_BUFFER_SIZE 1024
 
 #define toUnsignedInteger(x) (((x) < 0) ? -(2 * (x) + 1) : (2 * (x)))
-#define toSignedInteger(x) (((x) % 2) ? (-(x + 1) / 2) : ((x) / 2))
+#define toSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
 
 typedef enum
 {
@@ -51,6 +51,7 @@ typedef struct
 		FieldValue* list;
 	};
 	int* listItemSizes;
+	char* isItemNull;
 } Field;
 
 typedef struct
@@ -129,13 +130,6 @@ void freePrimitiveReader(PrimitiveReader* reader);
 
 int readStruct(StructReader* reader, void* value);
 int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, uint8_t* stream, long streamLength);
-
-//char readBoolean(StreamReader* booleanReaderState);
-//int readByte(StreamReader* byteReaderState, uint8_t *result);
-//int readInteger(Type__Kind kind, StreamReader* intReaderState, int64_t* result);
-//int readFloat(StreamReader* fpState, float *data);
-//int readDouble(StreamReader* fpState, double *data);
-//int readBinary(StreamReader* intReaderState, uint8_t* data, int length);
 
 /**
  * Reads one element from the type.

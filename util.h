@@ -11,7 +11,7 @@
 #include "orc_proto.pb-c.h"
 #include "recordReader.h"
 
-void printFieldValue(FieldValue* value, Type__Kind kind);
+void printFieldValue(FieldValue* value, Type__Kind kind, int length);
 
 int timespecToStr(char* timespecBuffer, struct timespec *ts);
 
