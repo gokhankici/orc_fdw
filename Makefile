@@ -3,12 +3,14 @@ LIBS		+= `pkg-config --libs libprotobuf-c zlib`
 INCLUDES	+= `pkg-config --cflags libprotobuf-c zlib`
 CFLAGS		 = -Wall
 
+EXEC_FOLDER				= out
 READMETADATA_OBJECTS	= readMetadata.o orc_proto.pb-c.o
 TEST_OBJECTS			= test.o recordReader.o
 TESTFILEREADER_OBJECTS	= testFileReader.o recordReader.o orc_proto.pb-c.o util.o fileReader.o
 EXECUTABLES				= readMetadata test testFileReader
 
 all:			$(EXECUTABLES)
+				mv $(EXECUTABLES) $(EXEC_FOLDER)/
 
 .SUFFIXES: 		.c .o
 
@@ -27,4 +29,4 @@ testFileReader:	$(TESTFILEREADER_OBJECTS)
 .PHONY:			clean
 
 clean:	
-				rm -f $(EXECUTABLES) *.o
+				rm -f $(EXEC_FOLDER)/* *.o

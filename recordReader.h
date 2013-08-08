@@ -45,6 +45,16 @@ typedef union
 
 typedef struct
 {
+	union
+	{
+		FieldValue value;
+		FieldValue* list;
+	};
+	int* listItemSizes;
+} Field;
+
+typedef struct
+{
 	/* pointer to the next byte to read */
 	/* TODO: Is fixed size buffer better ? */
 	uint8_t *streamPointer;
@@ -74,6 +84,7 @@ typedef struct
 	};
 
 } StreamReader;
+
 typedef struct
 {
 	Type__Kind kind;
@@ -116,22 +127,21 @@ extern struct tm BASE_TIMESTAMP;
 void freeStructReader(StructReader* reader);
 void freePrimitiveReader(PrimitiveReader* reader);
 
+int readStruct(StructReader* reader, void* value);
 int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, uint8_t* stream, long streamLength);
 
-char readBoolean(StreamReader* booleanReaderState);
-int readByte(StreamReader* byteReaderState, uint8_t *result);
-int readInteger(Type__Kind kind, StreamReader* intReaderState, int64_t* result);
-int readFloat(StreamReader* fpState, float *data);
-int readDouble(StreamReader* fpState, double *data);
-int readBinary(StreamReader* intReaderState, uint8_t* data, int length);
+//char readBoolean(StreamReader* booleanReaderState);
+//int readByte(StreamReader* byteReaderState, uint8_t *result);
+//int readInteger(Type__Kind kind, StreamReader* intReaderState, int64_t* result);
+//int readFloat(StreamReader* fpState, float *data);
+//int readDouble(StreamReader* fpState, double *data);
+//int readBinary(StreamReader* intReaderState, uint8_t* data, int length);
 
 /**
  * Reads one element from the type.
  * The returned value is <0 for error, 1 for null, 0 for not-null value
  */
-int readPrimitiveType(Reader* reader, FieldValue* value, int* length);
-int readListElement(Reader* reader, FieldValue* value, int* length);
-int readStruct(StructReader* reader, void* value);
+int readField(Reader* reader, Field* field, int* length);
 
 Type__Kind getStreamKind(Type__Kind type, int streamIndex);
 int getStreamCount(Type__Kind type);

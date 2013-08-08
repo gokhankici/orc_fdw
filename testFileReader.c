@@ -8,24 +8,36 @@ int printAllData(StructReader* structReader, int noOfRows)
 	Reader* reader = NULL;
 	int rowNo = 0;
 	int columnNo = 0;
-	FieldValue value;
+	Field field;
 	int length = 0;
 	int isNull = 0;
+	int iterator = 0;
 
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
 			reader = structReader->fields[columnNo];
-			isNull = readPrimitiveType(reader, &value, &length);
+			isNull = readField(reader, &field, &length);
 			if (isNull)
 			{
 				printf("(NULL)|");
 			}
 			else if (isNull == 0)
 			{
-				printFieldValue(&value, reader->kind);
-				printf("|");
+				if (reader->kind == TYPE__KIND__LIST)
+				{
+					printf("[");
+					for (iterator = 0; iterator < length; ++iterator)
+					{
+
+					}
+				}
+				else
+				{
+					printFieldValue(&field.value, reader->kind);
+					printf("|");
+				}
 			}
 			else
 			{
@@ -69,7 +81,12 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	initStripeReader(footer, &structReader);
+	result = initStripeReader(footer, &structReader);
+	if (result)
+	{
+		fprintf(stderr, "Error while initializing structure reader\n");
+		exit(1);
+	}
 
 	int i = 0;
 	for (i = 0; i < footer->n_stripes; i++)

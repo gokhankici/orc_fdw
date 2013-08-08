@@ -250,7 +250,7 @@ int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, uint8_t*
  * 0,1 : false or true value
  *  -1 : error
  */
-char readBoolean(StreamReader* booleanReaderState)
+static char readBoolean(StreamReader* booleanReaderState)
 {
 	char result = 0;
 
@@ -292,7 +292,7 @@ char readBoolean(StreamReader* booleanReaderState)
  * Reads an integer from the stream.
  * Conversion from mixed sign to actual sign isn't done.
  */
-int readByte(StreamReader* intReaderState, uint8_t *result)
+static int readByte(StreamReader* intReaderState, uint8_t *result)
 {
 	*result = 0;
 
@@ -328,7 +328,7 @@ int readByte(StreamReader* intReaderState, uint8_t *result)
  * Reads an integer from the stream.
  * Conversion from mixed sign to actual sign isn't done.
  */
-int readInteger(Type__Kind kind, StreamReader* intReaderState, int64_t *result)
+static int readInteger(Type__Kind kind, StreamReader* intReaderState, int64_t *result)
 {
 	*result = 0;
 	long bytesRead = 0;
@@ -386,7 +386,7 @@ int readInteger(Type__Kind kind, StreamReader* intReaderState, int64_t *result)
 	return 0;
 }
 
-int readFloat(StreamReader* fpState, float *data)
+static int readFloat(StreamReader* fpState, float *data)
 {
 	if (fpState->streamLength < 4)
 	{
@@ -400,7 +400,7 @@ int readFloat(StreamReader* fpState, float *data)
 	return 0;
 }
 
-int readDouble(StreamReader* fpState, double *data)
+static int readDouble(StreamReader* fpState, double *data)
 {
 	if (fpState->streamLength < 8)
 	{
@@ -417,7 +417,7 @@ int readDouble(StreamReader* fpState, double *data)
 /**
  * Reads a list of bytes from the input stream.
  */
-int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length)
+static int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length)
 {
 	int bytePosition = 0;
 
@@ -437,7 +437,7 @@ int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length)
 	return 0;
 }
 
-int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
+static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 {
 	PrimitiveReader* primitiveReader = (PrimitiveReader*) reader->fieldReader;
 
@@ -523,7 +523,6 @@ int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 
 		integerStreamReader = &primitiveReader->readers[DATA];
 		result = readInteger(reader->kind, integerStreamReader, &index);
-		*length = primitiveReader->wordLength[index];
 		value->binary = primitiveReader->dictionary[index];
 		break;
 	case TYPE__KIND__BINARY:
@@ -568,11 +567,16 @@ int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	return result;
 }
 
-int readListElement(Reader* reader, FieldValue* value, int* length)
+static int readListElement(Reader* reader, Field* field, int* length)
 {
 	ListReader* listReader = reader->fieldReader;
+	Reader* itemReader = &listReader->itemReader;
 	StreamReader* presentStreamReader = &reader->presentBitReader;
+	int64_t listSize = 0;
+	int result = 0;
+	int iterator = 0;
 	char isPresent = 0;
+	FieldValue* value = NULL;
 
 	if (reader->hasPresentBitReader && (isPresent = readBoolean(presentStreamReader)) == 0)
 	{
@@ -585,7 +589,45 @@ int readListElement(Reader* reader, FieldValue* value, int* length)
 		return -1;
 	}
 
-	return readPrimitiveType(&(listReader->itemReader), value, length);
+	result = readInteger(reader->kind, &listReader->lengthReader, &listSize);
+	if (result)
+	{
+		/* error while reading the list size */
+		return 1;
+	}
+
+	field->list = malloc(sizeof(FieldValue) * listSize);
+	field->listItemSizes = NULL;
+	*length = (int) listSize;
+	if (itemReader->kind == TYPE__KIND__BINARY)
+	{
+		field->listItemSizes = malloc(sizeof(int) * listSize);
+	}
+
+	for (iterator = 0; iterator < listSize; ++iterator)
+	{
+		value = &field->list[iterator];
+		result = readPrimitiveType(itemReader, value, &field->listItemSizes[iterator]);
+//		TODO There can be null elements in the list
+		if (result)
+		{
+			/* error while reading the list item */
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+int readField(Reader* reader, Field* field, int* length)
+{
+	switch (reader->kind)
+	{
+	case TYPE__KIND__LIST:
+		return readListElement(reader, field, length);
+	default:
+		return readPrimitiveType(reader, &field->value, length);
+	}
 }
 
 /**
@@ -637,6 +679,8 @@ Type__Kind getStreamKind(Type__Kind type, int streamIndex)
 			return -1;
 		}
 		break;
+	case TYPE__KIND__LIST:
+		return streamIndex ? -1 : TYPE__KIND__INT;
 	default:
 		return -1;
 	}
@@ -663,6 +707,9 @@ int getStreamCount(Type__Kind type)
 		return STRING_STREAM_COUNT;
 	case TYPE__KIND__TIMESTAMP:
 		return TIMESTAMP_STREAM_COUNT;
+	case TYPE__KIND__LIST:
+		/* for length */
+		return 1;
 	default:
 		return -1;
 	}

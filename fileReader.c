@@ -4,6 +4,8 @@
 #include "recordReader.h"
 #include "util.h"
 
+#define isComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
+
 int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSizePtr)
 {
 	int isByteRead = 0;
@@ -95,7 +97,7 @@ int readStripeFooter(FILE* orcFile, StripeFooter** stripeFooter, StripeInformati
 	return 0;
 }
 
-void initStripeReader(Footer* footer, StructReader* reader)
+int initStripeReader(Footer* footer, StructReader* reader)
 {
 	int i = 0;
 	int j = 0;
@@ -103,7 +105,9 @@ void initStripeReader(Footer* footer, StructReader* reader)
 	Type* root = footer->types[0];
 	Type* type = NULL;
 	PrimitiveReader* primitiveReader = NULL;
-	Reader* field;
+	ListReader* listReader = NULL;
+	Reader* field = NULL;
+	Reader* listItemReader = NULL;
 	reader->noOfFields = root->n_subtypes;
 	reader->fields = malloc(sizeof(Reader*) * reader->noOfFields);
 
@@ -115,21 +119,55 @@ void initStripeReader(Footer* footer, StructReader* reader)
 		type = types[root->subtypes[i]];
 		field->kind = type->kind;
 
-		field->fieldReader = malloc(sizeof(PrimitiveReader));
-		field->hasPresentBitReader = 0;
-		field->presentBitReader.stream = NULL;
-
-		primitiveReader = field->fieldReader;
-		primitiveReader->dictionary = NULL;
-		primitiveReader->dictionarySize = 0;
-		primitiveReader->wordLength = NULL;
-
-		for (j = 0; j < MAX_STREAM_COUNT; ++j)
+		if (field->kind == TYPE__KIND__LIST)
 		{
-			primitiveReader->readers[j].stream = NULL;
-			primitiveReader->readers[j].streamLength = 0;
+			field->fieldReader = malloc(sizeof(ListReader));
+			field->hasPresentBitReader = 0;
+			field->presentBitReader.stream = NULL;
+
+			listReader = field->fieldReader;
+			listReader->lengthReader.stream = NULL;
+
+			/* initialize list item reader */
+			listItemReader = &listReader->itemReader;
+			listItemReader->hasPresentBitReader = 0;
+			listItemReader->presentBitReader.stream = NULL;
+			listItemReader->columnNo = type->subtypes[0];
+			listItemReader->kind = types[listItemReader->columnNo]->kind;
+
+			if(isComplexType(listItemReader->kind))
+			{
+				/* only list of primitive types is supported */
+				return 1;
+			}
+
+			primitiveReader = listItemReader->fieldReader;
+
+			for (j = 0; j < MAX_STREAM_COUNT; ++j)
+			{
+				primitiveReader->readers[j].stream = NULL;
+				primitiveReader->readers[j].streamLength = 0;
+			}
+		}
+		else
+		{
+			field->fieldReader = malloc(sizeof(PrimitiveReader));
+			field->hasPresentBitReader = 0;
+			field->presentBitReader.stream = NULL;
+
+			primitiveReader = field->fieldReader;
+			primitiveReader->dictionary = NULL;
+			primitiveReader->dictionarySize = 0;
+			primitiveReader->wordLength = NULL;
+
+			for (j = 0; j < MAX_STREAM_COUNT; ++j)
+			{
+				primitiveReader->readers[j].stream = NULL;
+				primitiveReader->readers[j].streamLength = 0;
+			}
 		}
 	}
+	return 0;
 }
 
 int readDataStream(StreamReader* streamReader, Type__Kind streamKind, FILE* orcFile, long offset, long length)
@@ -154,6 +192,7 @@ int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* st
 	Reader** readers = structReader->fields;
 	Reader* reader = NULL;
 	PrimitiveReader* primitiveReader = NULL;
+	ListReader* listReader = NULL;
 	int streamNo = 0;
 	int fieldNo = 0;
 	int result = 0;
@@ -175,9 +214,54 @@ int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* st
 		assert(stream->kind != STREAM__KIND__ROW_INDEX);
 
 		reader = readers[fieldNo++];
-		columnEncoding = stripeFooter->columns[reader->columnNo];
-		reader->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
 
+		/* skip the not required columns */
+		if (reader == NULL)
+		{
+			continue;
+		}
+
+		while (reader->columnNo > stream->column)
+		{
+			/* skip columns that doesn't required for reading */
+			stream = stripeFooter->streams[++streamNo];
+		}
+
+		columnEncoding = stripeFooter->columns[reader->columnNo];
+
+		if (reader->kind == TYPE__KIND__LIST)
+		{
+			/* if the type is list, first check for present stream as always */
+			reader->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
+			if (reader->hasPresentBitReader)
+			{
+				result = readDataStream(&reader->presentBitReader, TYPE__KIND__BOOLEAN, orcFile, currentOffset,
+						stream->length);
+				if (result)
+				{
+					/* cannot read the data stream correctly */
+					return -1;
+				}
+				currentOffset += stream->length;
+				stream = stripeFooter->streams[++streamNo];
+			}
+
+			/* then read the length stream into the reader */
+			streamKind = getStreamKind(reader->kind, 0);
+			listReader = reader->fieldReader;
+			result = readDataStream(&listReader->lengthReader, streamKind, orcFile, currentOffset, stream->length);
+			if (result)
+			{
+				return result;
+			}
+			currentOffset += stream->length;
+			stream = stripeFooter->streams[++streamNo];
+
+			/* and finally set the item of the list as the reader and continue */
+			reader = &listReader->itemReader;
+		}
+
+		reader->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
 		if (reader->hasPresentBitReader)
 		{
 			result = readDataStream(&reader->presentBitReader, TYPE__KIND__BOOLEAN, orcFile, currentOffset,

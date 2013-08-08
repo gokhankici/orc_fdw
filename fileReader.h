@@ -14,7 +14,7 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 
 int readStripeFooter(FILE* orcFile, StripeFooter** stripeFooter, StripeInformation* stripeInfo);
 
-void initStripeReader(Footer* footer, StructReader* reader);
+int initStripeReader(Footer* footer, StructReader* reader);
 
 /* read actual data from the file */
 
