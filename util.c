@@ -31,7 +31,6 @@ int timespecToStr(char* timespecBuffer, struct timespec *ts)
 
 int inf(uint8_t *input, unsigned int inputSize, uint8_t **output, unsigned int *outputSize)
 {
-	uInt ZLIB_CHUNK = inputSize * 15;
 	int ret = 0;
 	z_stream strm;
 
@@ -45,14 +44,14 @@ int inf(uint8_t *input, unsigned int inputSize, uint8_t **output, unsigned int *
 	if (ret != Z_OK)
 		return ret;
 
-	*output = malloc(ZLIB_CHUNK);
+	*output = malloc(compressionBlockSize);
 
 	strm.avail_in = inputSize;
 	if (strm.avail_in == 0)
 		return Z_DATA_ERROR;
 	strm.next_in = input;
 
-	strm.avail_out = ZLIB_CHUNK;
+	strm.avail_out = compressionBlockSize;
 	strm.next_out = *output;
 	ret = inflate(&strm, Z_NO_FLUSH);
 	assert(ret != Z_STREAM_ERROR); /* state not clobbered */
@@ -70,7 +69,7 @@ int inf(uint8_t *input, unsigned int inputSize, uint8_t **output, unsigned int *
 		/* we should have used more space*/
 		return -10;
 	}
-	*outputSize = ZLIB_CHUNK - strm.avail_out;
+	*outputSize = compressionBlockSize - strm.avail_out;
 
 	/* clean up and return */
 	(void) inflateEnd(&strm);

@@ -6,6 +6,9 @@
 
 #define isComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
 
+long compressionBlockSize = 0;
+CompressionKind compressionKind = 0;
+
 int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSizePtr)
 {
 	int isByteRead = 0;
@@ -43,6 +46,8 @@ int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSi
 	}
 
 	*postScriptSizePtr = psSize;
+	compressionBlockSize = (*postScriptPtr)->has_compressionblocksize ? (*postScriptPtr)->compressionblocksize : 0;
+	compressionKind = (*postScriptPtr)->has_compression ? (*postScriptPtr)->compression : 0;
 	return 0;
 }
 
@@ -52,6 +57,7 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 	uint8_t* compressedFooterBuffer = NULL;
 	uInt uncompressSize = 0;
 	uint8_t *uncompressedFooterBuffer = NULL;
+	int result = 0;
 	*footer = NULL;
 
 	/* read the file footer */
@@ -64,12 +70,29 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 		return 1;
 	}
 
-//	int result = inf(compressedFooterBuffer, footerSize, &uncompressedFooterBuffer, &uncompressSize);
-	uncompressedFooterBuffer = compressedFooterBuffer;
-	uncompressSize = footerSize;
+	FILE* asdf = fopen("/home/gokhan/asdf", "w");
+	fwrite(compressedFooterBuffer, footerSize, 1, asdf);
+
+	switch (compressionKind)
+	{
+	case COMPRESSION_KIND__NONE:
+		*footer = footer__unpack(NULL, footerSize, compressedFooterBuffer);
+		break;
+	case COMPRESSION_KIND__ZLIB:
+		result = inf(compressedFooterBuffer, footerSize, &uncompressedFooterBuffer, &uncompressSize);
+		if (result != Z_OK)
+		{
+			fprintf(stderr, "error while uncompressing footer with zlib\n");
+			return 1;
+		}
+		*footer = footer__unpack(NULL, uncompressSize, uncompressedFooterBuffer);
+		break;
+	default:
+		fprintf(stderr, "unsupported compression kind\n");
+		return 1;
+	}
 
 	/* unpack the message using protobuf-c. */
-	*footer = footer__unpack(NULL, uncompressSize, uncompressedFooterBuffer);
 	if (*footer == NULL)
 	{
 		fprintf(stderr, "error unpacking incoming message\n");
@@ -77,6 +100,10 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 	}
 
 	free(compressedFooterBuffer);
+	if (uncompressedFooterBuffer)
+	{
+		free(uncompressedFooterBuffer);
+	}
 
 	return 0;
 }

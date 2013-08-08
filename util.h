@@ -11,6 +11,9 @@
 #include "orc_proto.pb-c.h"
 #include "recordReader.h"
 
+extern long compressionBlockSize;
+extern CompressionKind compressionKind;
+
 void printFieldValue(FieldValue* value, Type__Kind kind, int length);
 
 int timespecToStr(char* timespecBuffer, struct timespec *ts);
