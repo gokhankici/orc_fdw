@@ -39,6 +39,7 @@ int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSi
 		fprintf(stderr, "error unpacking incoming message\n");
 		return 1;
 	}
+
 	*postScriptSizePtr = psSize;
 	return 0;
 }
@@ -104,11 +105,13 @@ void initStripeReader(Footer* footer, StructReader* reader)
 	PrimitiveReader* primitiveReader = NULL;
 	Reader* field;
 	reader->noOfFields = root->n_subtypes;
-	reader->fields = malloc(sizeof(Reader) * reader->noOfFields);
+	reader->fields = malloc(sizeof(Reader*) * reader->noOfFields);
 
 	for (i = 0; i < reader->noOfFields; ++i)
 	{
-		field = &reader->fields[i];
+		reader->fields[i] = malloc(sizeof(Reader));
+		field = reader->fields[i];
+		field->columnNo = root->subtypes[i];
 		type = types[root->subtypes[i]];
 		field->kind = type->kind;
 
@@ -148,11 +151,11 @@ int readDataStream(StreamReader* streamReader, Type__Kind streamKind, FILE* orcF
 int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, FILE* orcFile)
 {
 	Stream* stream = NULL;
-	Reader* readers = structReader->fields;
+	Reader** readers = structReader->fields;
 	Reader* reader = NULL;
 	PrimitiveReader* primitiveReader = NULL;
 	int streamNo = 0;
-	int columnNo = 0;
+	int fieldNo = 0;
 	int result = 0;
 	long currentOffset = dataOffset;
 	int noOfDataStreams = 0;
@@ -160,17 +163,19 @@ int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* st
 	Type__Kind streamKind = 0;
 	ColumnEncoding* columnEncoding = NULL;
 
+	stream = stripeFooter->streams[streamNo];
+	while (stream->kind == STREAM__KIND__ROW_INDEX)
+	{
+		/* skip index data for now */
+		stream = stripeFooter->streams[++streamNo];
+	}
+
 	while (streamNo < stripeFooter->n_streams)
 	{
-		stream = stripeFooter->streams[streamNo];
-		if (stream->kind == STREAM__KIND__ROW_INDEX)
-		{
-			/* skip index data for now */
-			streamNo++;
-			continue;
-		}
-		columnEncoding = stripeFooter->columns[columnNo + 1];
-		reader = &readers[columnNo++];
+		assert(stream->kind != STREAM__KIND__ROW_INDEX);
+
+		reader = readers[fieldNo++];
+		columnEncoding = stripeFooter->columns[reader->columnNo];
 		reader->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
 
 		if (reader->hasPresentBitReader)

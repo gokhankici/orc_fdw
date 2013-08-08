@@ -77,6 +77,7 @@ typedef struct
 typedef struct
 {
 	Type__Kind kind;
+	int columnNo;
 	StreamReader presentBitReader;
 	char hasPresentBitReader;
 
@@ -107,11 +108,12 @@ typedef struct
 typedef struct
 {
 	int noOfFields;
-	Reader* fields;
+	Reader** fields;
 } StructReader;
 
 extern struct tm BASE_TIMESTAMP;
 
+void freeStructReader(StructReader* reader);
 void freePrimitiveReader(PrimitiveReader* reader);
 
 int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, uint8_t* stream, long streamLength);
@@ -128,7 +130,7 @@ int readBinary(StreamReader* intReaderState, uint8_t* data, int length);
  * The returned value is <0 for error, 1 for null, 0 for not-null value
  */
 int readPrimitiveType(Reader* reader, FieldValue* value, int* length);
-int readListElement(Reader* reader, void* value, int* length);
+int readListElement(Reader* reader, FieldValue* value, int* length);
 int readStruct(StructReader* reader, void* value);
 
 Type__Kind getStreamKind(Type__Kind type, int streamIndex);

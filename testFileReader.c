@@ -16,7 +16,7 @@ int printAllData(StructReader* structReader, int noOfRows)
 	{
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
-			reader = &structReader->fields[columnNo];
+			reader = structReader->fields[columnNo];
 			isNull = readPrimitiveType(reader, &value, &length);
 			if (isNull)
 			{
@@ -41,7 +41,7 @@ int printAllData(StructReader* structReader, int noOfRows)
 int main(int argc, char **argv)
 {
 	/*FILE* orcFile = fopen("/home/gokhan/orc-files/output.orc", "r");*/
-	FILE* orcFile = fopen("timestamp.orc", "r");
+	FILE* orcFile = fopen("short.orc", "r");
 	StructReader structReader;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
@@ -53,11 +53,22 @@ int main(int argc, char **argv)
 	long footerSize = 0;
 	int result = 0;
 
-	readPostscript(orcFile, &postScript, &postScriptSize);
+	result = readPostscript(orcFile, &postScript, &postScriptSize);
+	if (result)
+	{
+		fprintf(stderr, "Error while reading postscript\n");
+		exit(1);
+	}
 	footerSize = postScript->footerlength;
 
 	/* read the file footer */
-	result = readFileFooter(orcFile, &footer, 1 + postScriptSize, footerSize);
+	result = readFileFooter(orcFile, &footer, 1 + postScriptSize + footerSize, footerSize);
+	if (result)
+	{
+		fprintf(stderr, "Error while reading file footer\n");
+		exit(1);
+	}
+
 	initStripeReader(footer, &structReader);
 
 	int i = 0;
@@ -69,21 +80,21 @@ int main(int argc, char **argv)
 		result = readStripeFooter(orcFile, &stripeFooter, stripe);
 		if (result)
 		{
-			fprintf(stderr, "Error while reading stripe footer");
+			fprintf(stderr, "Error while reading stripe footer\n");
 			exit(1);
 		}
 
 		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, &structReader, orcFile);
 		if (result)
 		{
-			fprintf(stderr, "Error while reading stripe info");
+			fprintf(stderr, "Error while reading stripe data\n");
 			exit(1);
 		}
 
 		result = printAllData(&structReader, stripe->numberofrows);
 		if (result)
 		{
-			fprintf(stderr, "Error while printing values");
+			fprintf(stderr, "Error while printing values\n");
 			exit(1);
 		}
 

@@ -260,8 +260,8 @@ int main(int argc, const char * argv[])
 {
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
-//	FILE* orcFile = fopen("short.orc", "r");
-	FILE* orcFile = fopen("/home/gokhan/orc-files/timestamp.orc", "r");
+	FILE* orcFile = fopen("short.orc", "r");
+	/*FILE* orcFile = fopen("/home/gokhan/orc-files/timestamp.orc", "r");*/
 	char c = 0;
 	int postScriptSize = 0;
 	long footerSize = 0;
