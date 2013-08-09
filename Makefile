@@ -9,8 +9,11 @@ TEST_OBJECTS			= test.o recordReader.o
 TESTFILEREADER_OBJECTS	= testFileReader.o recordReader.o orc_proto.pb-c.o util.o fileReader.o
 EXECUTABLES				= readMetadata test testFileReader
 
-all:			$(EXECUTABLES)
+all:			$(EXECUTABLES) snappy_c
 				mv $(EXECUTABLES) $(EXEC_FOLDER)/
+
+snappy_c:
+				cd snappy-c && make
 
 .SUFFIXES: 		.c .o
 

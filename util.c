@@ -107,7 +107,7 @@ static int inf(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 	return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
 }
 
-int readCompressedStreamHeader(CompressedStream* stream)
+static int readCompressedStreamHeader(CompressedStream* stream)
 {
 	uint8_t *array = stream->array;
 	int bufferSize = stream->compressionBlockSize;
