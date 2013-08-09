@@ -25,7 +25,7 @@
 #define MAX_POSTSCRIPT_SIZE 255
 #define STREAM_BUFFER_SIZE 1024
 
-#define toUnsignedInteger(x) (((x) < 0) ? -(2 * (x) + 1) : (2 * (x)))
+#define toUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
 #define toSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
 
 typedef enum

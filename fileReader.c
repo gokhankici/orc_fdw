@@ -4,10 +4,8 @@
 #include "recordReader.h"
 #include "util.h"
 
-#define isComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
-
-long compressionBlockSize = 0;
-CompressionKind compressionKind = 0;
+CompressionParameters compressionParameters =
+{ 0 };
 
 int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSizePtr)
 {
@@ -46,8 +44,9 @@ int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSi
 	}
 
 	*postScriptSizePtr = psSize;
-	compressionBlockSize = (*postScriptPtr)->has_compressionblocksize ? (*postScriptPtr)->compressionblocksize : 0;
-	compressionKind = (*postScriptPtr)->has_compression ? (*postScriptPtr)->compression : 0;
+	compressionParameters.compressionBlockSize =
+			(*postScriptPtr)->has_compressionblocksize ? (*postScriptPtr)->compressionblocksize : 0;
+	compressionParameters.compressionKind = (*postScriptPtr)->has_compression ? (*postScriptPtr)->compression : 0;
 	return 0;
 }
 
@@ -55,9 +54,8 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 {
 	int msg_len = 0;
 	uint8_t* compressedFooterBuffer = NULL;
-	uInt uncompressSize = 0;
-	uint8_t *uncompressedFooterBuffer = NULL;
 	int result = 0;
+	CompressedStream *stream = initCompressedStream(&compressionParameters);
 	*footer = NULL;
 
 	/* read the file footer */
@@ -70,28 +68,16 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 		return 1;
 	}
 
-	FILE* asdf = fopen("/home/gokhan/asdf", "w");
-	fwrite(compressedFooterBuffer, footerSize, 1, asdf);
-
-	switch (compressionKind)
+	stream->array = compressedFooterBuffer;
+	stream->size = footerSize;
+	result = uncompressStream(stream);
+	if (result)
 	{
-	case COMPRESSION_KIND__NONE:
-		*footer = footer__unpack(NULL, footerSize, compressedFooterBuffer);
-		break;
-	case COMPRESSION_KIND__ZLIB:
-		result = inf(compressedFooterBuffer, footerSize, &uncompressedFooterBuffer, &uncompressSize);
-		if (result != Z_OK)
-		{
-			fprintf(stderr, "error while uncompressing footer with zlib\n");
-			return 1;
-		}
-		*footer = footer__unpack(NULL, uncompressSize, uncompressedFooterBuffer);
-		break;
-	default:
-		fprintf(stderr, "unsupported compression kind\n");
+		fprintf(stderr, "error while uncompressing file footer stream\n");
 		return 1;
 	}
 
+	*footer = footer__unpack(NULL, stream->uncompressed->length, stream->uncompressed->buffer);
 	/* unpack the message using protobuf-c. */
 	if (*footer == NULL)
 	{
@@ -99,27 +85,41 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 		return 1;
 	}
 
-	free(compressedFooterBuffer);
-	if (uncompressedFooterBuffer)
-	{
-		free(uncompressedFooterBuffer);
-	}
+	freeCompressedStream(stream,0);
 
 	return 0;
 }
 
 int readStripeFooter(FILE* orcFile, StripeFooter** stripeFooter, StripeInformation* stripeInfo)
 {
+	CompressedStream *stream = initCompressedStream(&compressionParameters);
 	uint8_t *stripeFooterBuffer = malloc(stripeInfo->footerlength);
 	long stripeFooterOffset = stripeInfo->offset + (stripeInfo->has_indexlength ? stripeInfo->indexlength : 0)
 			+ stripeInfo->datalength;
+	int result = 0;
+
 	*stripeFooter = NULL;
 
 	fseek(orcFile, stripeFooterOffset, SEEK_SET);
-	fread(stripeFooterBuffer, stripeInfo->footerlength, 1, orcFile);
-	*stripeFooter = stripe_footer__unpack(NULL, stripeInfo->footerlength, stripeFooterBuffer);
+	result = fread(stripeFooterBuffer, 1, stripeInfo->footerlength, orcFile);
+	if (result != stripeInfo->footerlength)
+	{
+		fprintf(stderr, "Error while reading stripe footer.\n");
+		return 1;
+	}
 
-	free(stripeFooterBuffer);
+	stream->array = stripeFooterBuffer;
+	stream->size = stripeInfo->footerlength;
+	result = uncompressStream(stream);
+	if (result)
+	{
+		fprintf(stderr, "error while uncompressing stripe footer stream\n");
+		return 1;
+	}
+
+	*stripeFooter = stripe_footer__unpack(NULL, stream->uncompressed->length, stream->uncompressed->buffer);
+
+	freeCompressedStream(stream,0);
 
 	return 0;
 }
@@ -201,6 +201,10 @@ int initStripeReader(Footer* footer, StructReader* reader)
 int readDataStream(StreamReader* streamReader, Type__Kind streamKind, FILE* orcFile, long offset, long length)
 {
 	uint8_t* buffer = NULL;
+	uint8_t* uncompressedData = NULL;
+	long dataLength = 0;
+	CompressedStream *stream = initCompressedStream(&compressionParameters);
+	int result = 0;
 
 	if (streamReader->stream != NULL)
 	{
@@ -211,7 +215,21 @@ int readDataStream(StreamReader* streamReader, Type__Kind streamKind, FILE* orcF
 	fseek(orcFile, offset, SEEK_SET);
 	fread(buffer, length, 1, orcFile);
 
-	return initStreamReader(streamKind, streamReader, buffer, length);
+	stream->array = buffer;
+	stream->size = length;
+	result = uncompressStream(stream);
+	if (result)
+	{
+		fprintf(stderr, "error while uncompressing data stream\n");
+		return 1;
+	}
+
+	uncompressedData = stream->uncompressed->buffer;
+	dataLength = stream->uncompressed->length;
+
+	freeCompressedStream(stream,1);
+
+	return initStreamReader(streamKind, streamReader, uncompressedData, dataLength);
 }
 
 int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, FILE* orcFile)
