@@ -85,7 +85,7 @@ int readFileFooter(FILE* orcFile, Footer** footer, int footerOffsetFromEnd, long
 		return 1;
 	}
 
-	freeCompressedStream(stream,0);
+	freeCompressedStream(stream, 0);
 
 	return 0;
 }
@@ -118,8 +118,13 @@ int readStripeFooter(FILE* orcFile, StripeFooter** stripeFooter, StripeInformati
 	}
 
 	*stripeFooter = stripe_footer__unpack(NULL, stream->uncompressed->length, stream->uncompressed->buffer);
+	if (*stripeFooter == NULL)
+	{
+		fprintf(stderr, "error while unpacking stripe footer\n");
+		return 1;
+	}
 
-	freeCompressedStream(stream,0);
+	freeCompressedStream(stream, 0);
 
 	return 0;
 }
@@ -227,7 +232,7 @@ int readDataStream(StreamReader* streamReader, Type__Kind streamKind, FILE* orcF
 	uncompressedData = stream->uncompressed->buffer;
 	dataLength = stream->uncompressed->length;
 
-	freeCompressedStream(stream,1);
+	freeCompressedStream(stream, 1);
 
 	return initStreamReader(streamKind, streamReader, uncompressedData, dataLength);
 }

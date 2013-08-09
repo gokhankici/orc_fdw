@@ -5,7 +5,7 @@ CFLAGS		 = -Wall
 SNAPPY_FOLDER = snappy-c
 
 EXEC_FOLDER				= out
-READMETADATA_OBJECTS	= readMetadata.o orc_proto.pb-c.o
+READMETADATA_OBJECTS	= $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o orc_proto.pb-c.o readMetadata.o  
 TEST_OBJECTS			= test.o recordReader.o
 TESTFILEREADER_OBJECTS	= testFileReader.o recordReader.o orc_proto.pb-c.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o 
 EXECUTABLES				= readMetadata test testFileReader

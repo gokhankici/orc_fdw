@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "orc_proto.pb-c.h"
+#include "fileReader.h"
 #include "recordReader.h"
+#include "util.h"
 
 char* getTypeKindName(Type__Kind kind)
 {
@@ -132,8 +134,8 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 		doubleStatistics = statistics->doublestatistics;
 		if (doubleStatistics)
 		{
-			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum,
-					doubleStatistics->maximum, doubleStatistics->sum);
+			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum, doubleStatistics->maximum,
+					doubleStatistics->sum);
 		}
 		break;
 	case TYPE__KIND__STRING:
@@ -225,15 +227,12 @@ void printDataInHex(uint8_t* data, int length)
 	printf("\n");
 }
 
-void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset, FILE* orcFile)
+void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset)
 {
 	int index = 0;
 	Stream* stream = NULL;
 	ColumnEncoding* columnEncoding = NULL;
-	uint8_t *dataBuffer;
 	long streamLength = 0;
-
-	fseek(orcFile, offset, SEEK_SET);
 
 	for (index = 0; index < stripeFooter->n_streams; ++index)
 	{
@@ -242,17 +241,9 @@ void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset, FILE* orc
 		streamLength = stream->length;
 
 		printf("Column %-2d | Stream %-2d | Offset: %ld\n", stream->column, index, offset);
-		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind),
-				streamLength);
+		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind), streamLength);
 		printf("    Encoding type: %-13s | Dict. size: %d\n", getEncodingName(columnEncoding->kind),
 				columnEncoding->has_dictionarysize ? columnEncoding->dictionarysize : 0);
-
-		dataBuffer = malloc(streamLength);
-		offset += streamLength;
-
-		fread(dataBuffer, 1, streamLength, orcFile);
-		printf("    Data:");
-		printDataInHex(dataBuffer, streamLength);
 	}
 }
 
@@ -261,14 +252,9 @@ int main(int argc, const char * argv[])
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
 //	FILE* orcFile = fopen("short.orc", "r");
-	FILE* orcFile = fopen("/home/gokhan/orc-files/bigrow1.orc", "r");
-	char c = 0;
+	FILE* orcFile = fopen("/home/gokhan/orc-files/output_gzip_lcomment.orc", "r");
 	int postScriptSize = 0;
 	long footerSize = 0;
-	int isByteRead = 0;
-	uint8_t postScriptBuffer[MAX_POSTSCRIPT_SIZE];
-	uint8_t *footerBuffer;
-	size_t msg_len = 0;
 	uint32_t *versionPointer = NULL;
 	StripeInformation** stripes = NULL;
 	StripeInformation* stripe = NULL;
@@ -277,39 +263,15 @@ int main(int argc, const char * argv[])
 	Type **types;
 	int noOfUserMetadataItems = 0;
 	ColumnStatistics* statistics;
-	long stripeFooterOffset = 0;
-	uint8_t *stripeFooterBuffer;
 	StripeFooter* stripeFooter;
+	int result = 0;
 
-	/* seek to the end of the file and read the PostScript length */
-	fseek(orcFile, -1, SEEK_END);
-	isByteRead = fread(&c, sizeof(char), 1, orcFile);
-
-	if (!isByteRead)
+	/* read post script */
+	result = readPostscript(orcFile, &postScript, &postScriptSize);
+	if (result)
 	{
-		printf("Error while reading the last byte\n");
-		exit(1);
-	}
-
-	postScriptSize = ((int) c) & 0xFF;
-	printf("Postscript size %d\n", postScriptSize);
-
-	/* read postscript into the buffer */
-	fseek(orcFile, -1 - postScriptSize, SEEK_END);
-	msg_len = fread(postScriptBuffer, 1, postScriptSize, orcFile);
-
-	if (msg_len != postScriptSize)
-	{
-		printf("Error while reading postscript from file\n");
-		exit(1);
-	}
-
-	/* unpack the message using protobuf-c. */
-	postScript = post_script__unpack(NULL, msg_len, postScriptBuffer);
-	if (postScript == NULL)
-	{
-		fprintf(stderr, "error unpacking incoming message\n");
-		exit(1);
+		fprintf(stderr, "Error while reading postscript\n");
+		return 1;
 	}
 
 	/* display the postscript's fields. */
@@ -325,22 +287,11 @@ int main(int argc, const char * argv[])
 	printf("Magic : %s\n", postScript->magic);
 
 	/* read the file footer */
-	fseek(orcFile, -(1 + postScriptSize + footerSize), SEEK_END);
-	footerBuffer = malloc(footerSize);
-	msg_len = fread(footerBuffer, 1, footerSize, orcFile);
-
-	if (msg_len != footerSize)
+	result = readFileFooter(orcFile, &footer, 1 + postScriptSize + footerSize, footerSize);
+	if (result)
 	{
-		printf("Error while reading footer from file\n");
-		exit(1);
-	}
-
-	/* unpack the message using protobuf-c. */
-	footer = footer__unpack(NULL, msg_len, footerBuffer);
-	if (footer == NULL)
-	{
-		fprintf(stderr, "error unpacking incoming message\n");
-		exit(1);
+		fprintf(stderr, "Error while reading file footer\n");
+		return 1;
 	}
 
 	stripes = footer->stripes;
@@ -400,22 +351,15 @@ int main(int argc, const char * argv[])
 	for (index = 0; index < noOfStripes; ++index)
 	{
 		stripe = stripes[index];
-		stripeFooterOffset = stripe->offset + stripe->indexlength + stripe->datalength;
-		stripeFooterBuffer = malloc(stripe->footerlength);
-
-		fseek(orcFile, stripeFooterOffset, SEEK_SET);
-		fread(stripeFooterBuffer, 1, stripe->footerlength, orcFile);
-		stripeFooter = stripe_footer__unpack(NULL, stripe->footerlength, stripeFooterBuffer);
-
-		if (stripeFooter == NULL)
+		result = readStripeFooter(orcFile, &stripeFooter, stripe);
+		if (result)
 		{
-			fprintf(stderr, "error unpacking incoming message\n");
-			exit(1);
+			fprintf(stderr, "Error while reading stripe footer\n");
+			return 1;
 		}
 
 		printf("== STRIPE %d ==\n", index);
-		printStripeInfo(stripeFooter, stripe->offset, orcFile);
-
+		printStripeInfo(stripeFooter, stripe->offset);
 	}
 
 	/* Free the unpacked message */
@@ -423,8 +367,6 @@ int main(int argc, const char * argv[])
 	footer__free_unpacked(footer, NULL);
 
 	fclose(orcFile);
-	free(footerBuffer);
-	free(stripeFooterBuffer);
 
 	return 0;
 }

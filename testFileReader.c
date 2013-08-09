@@ -70,8 +70,8 @@ int printAllData(StructReader* structReader, int noOfRows)
 
 int main(int argc, char **argv)
 {
-	FILE* orcFile = fopen("/home/gokhan/orc-files/bigrow1.orc", "r");
-//	FILE* orcFile = fopen("short.orc", "r");
+//	FILE* orcFile = fopen("/home/gokhan/orc-files/bigrow1.orc", "r");
+	FILE* orcFile = fopen("output_gzip.orc", "r");
 	StructReader structReader;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
