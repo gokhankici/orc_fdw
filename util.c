@@ -4,6 +4,7 @@
 #include <string.h>
 #include <zlib.h>
 #include "util.h"
+#include "snappy-c/snappy.h"
 
 #define TIMESPEC_BUFFER_LENGTH 30
 
@@ -113,6 +114,7 @@ static int readCompressedStreamHeader(CompressedStream* stream)
 	int bufferSize = stream->compressionBlockSize;
 	char isOriginal = 0;
 	int result = 0;
+	size_t snappyUncompressedSize = 0;
 
 	if (stream->size - stream->offset > COMPRESSED_HEADER_SIZE)
 	{
@@ -164,13 +166,38 @@ static int readCompressedStreamHeader(CompressedStream* stream)
 				stream->uncompressed->offset = 0;
 			}
 
-//			result = uncompress(stream->uncompressed->buffer, &stream->uncompressed->length, array + stream->offset,
-//					chunkLength);
-			result = inf(array + stream->offset, chunkLength, stream->uncompressed->buffer,
-					&stream->uncompressed->length);
-			if (result != Z_OK)
+			switch (stream->compressionKind)
 			{
-				fprintf(stderr, "Error while decompressing with zlib inflator\n");
+			case COMPRESSION_KIND__ZLIB:
+				result = inf(array + stream->offset, chunkLength, stream->uncompressed->buffer,
+						&stream->uncompressed->length);
+				if (result != Z_OK)
+				{
+					fprintf(stderr, "Error while decompressing with zlib inflator\n");
+					return 1;
+				}
+				break;
+			case COMPRESSION_KIND__SNAPPY:
+				result = snappy_uncompress((const char*) array + stream->offset, (size_t) chunkLength,
+						(char*) stream->uncompressed->buffer);
+				if (result)
+				{
+					fprintf(stderr, "Error while uncompressing with snappy. Error code %d\n", result);
+					return 1;
+				}
+				result = snappy_uncompressed_length((const char*) array + stream->offset, (size_t) chunkLength,
+						&snappyUncompressedSize);
+
+				if (result != 1)
+				{
+					fprintf(stderr, "Error while calculating uncompressed size of snappy block.\n");
+					return 1;
+				}
+
+				stream->uncompressed->length = (int) snappyUncompressedSize;
+				break;
+			default:
+				/* compression kind not supported */
 				return 1;
 			}
 		}
@@ -203,10 +230,11 @@ int uncompressStream(CompressedStream* stream)
 		result = 0;
 		break;
 	case COMPRESSION_KIND__ZLIB:
+	case COMPRESSION_KIND__SNAPPY:
 		result = readCompressedStreamHeader(stream);
 		if (result != 0)
 		{
-			fprintf(stderr, "error while uncompressing footer with zlib\n");
+			fprintf(stderr, "error while uncompressing footer\n");
 			return 1;
 		}
 		result = 0;
