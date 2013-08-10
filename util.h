@@ -13,6 +13,9 @@
 
 #define COMPRESSED_HEADER_SIZE 3
 
+#define min(x,y) (((x) < (y)) ? (x) : (y))
+#define max(x,y) (((x) < (y)) ? (y) : (x))
+
 typedef struct
 {
 	CompressionKind compressionKind;

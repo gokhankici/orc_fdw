@@ -8,7 +8,8 @@ EXEC_FOLDER				= out
 READMETADATA_OBJECTS	= $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o orc_proto.pb-c.o readMetadata.o  
 TEST_OBJECTS			= test.o recordReader.o
 TESTFILEREADER_OBJECTS	= testFileReader.o recordReader.o orc_proto.pb-c.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o 
-EXECUTABLES				= readMetadata test testFileReader
+TESTINPUTSTREAM_OBJECTS	= InputStream.o testInputStream.o
+EXECUTABLES				= readMetadata test testFileReader testInputStream
 
 
 all:			$(EXECUTABLES) snappy_c
@@ -30,6 +31,9 @@ readMetadata:	$(READMETADATA_OBJECTS)
 test:			$(TEST_OBJECTS)
 
 testFileReader:	$(TESTFILEREADER_OBJECTS)
+
+testInputStream:	$(TESTINPUTSTREAM_OBJECTS)
+
 
 .PHONY:			clean
 

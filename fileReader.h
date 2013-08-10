@@ -8,7 +8,6 @@
 #include "util.h"
 
 #define isComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
-#define min(x,y) (((x) < (y)) ? (x) : (y))
 #define DIRECTORY_SIZE_GUESS 16384
 
 /* read meta-data from the file */
