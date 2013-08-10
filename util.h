@@ -53,4 +53,6 @@ void printFieldValue(FieldValue* value, Type__Kind kind, int length);
 
 int timespecToStr(char* timespecBuffer, struct timespec *ts);
 
+int inf(uint8_t *input, int inputSize, uint8_t *output, int *outputSize);
+
 #endif /* UTIL_H_ */

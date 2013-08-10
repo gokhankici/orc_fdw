@@ -62,7 +62,7 @@ void freeCompressedStream(CompressedStream* stream, int retainUncompressedBuffer
 	}
 }
 
-static int inf(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
+int inf(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 {
 	int ret = 0;
 	z_stream strm;

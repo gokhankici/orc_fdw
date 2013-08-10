@@ -34,25 +34,30 @@ typedef struct
 
 FileStream* FileStream_init(char* filePath, long offset, long limit, int bufferSize);
 int FileStream_free(FileStream*);
-int FileStream_fill(FileStream*);
 char* FileStream_read(FileStream*, int *length);
 int FileStream_skip(FileStream*, int skip);
 long FileStream_bytesLeft(FileStream*);
 
 typedef struct
 {
-	/* Stream for decompression */
+	/* stream for decompression */
 	FileStream* fileStream;
 
+	/* block size used for compression */
+	int bufferSize;
+	CompressionKind compressionKind;
+
 	/* current length in the uncompressed buffer */
-	int offset;
+	int position;
 	/* current length of the uncompressed buffer */
 	int length;
 	/* buffer to store uncompressed data */
 	char* uncompressedBuffer;
+	/* true if uncompressed stream is the same as compressed one */
+	char isOriginal;
 } CompressedFileStream;
 
-CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize);
+CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize, CompressionKind kind);
 int CompressedFileStream_free(CompressedFileStream*);
 char* CompressedFileStream_read(CompressedFileStream*, int *length);
 int CompressedFileStream_skip(CompressedFileStream*, int skip);

@@ -8,7 +8,7 @@ EXEC_FOLDER				= out
 READMETADATA_OBJECTS	= $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o orc_proto.pb-c.o readMetadata.o  
 TEST_OBJECTS			= test.o recordReader.o
 TESTFILEREADER_OBJECTS	= testFileReader.o recordReader.o orc_proto.pb-c.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o 
-TESTINPUTSTREAM_OBJECTS	= InputStream.o testInputStream.o
+TESTINPUTSTREAM_OBJECTS	= InputStream.o testInputStream.o $(SNAPPY_FOLDER)/snappy.o util.o
 EXECUTABLES				= readMetadata test testFileReader testInputStream
 
 
