@@ -95,11 +95,6 @@ static int inf(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 		(void) inflateEnd(&strm);
 		return ret;
 	}
-	if (strm.avail_out == 0)
-	{
-		/* we should have used more space*/
-		return -10;
-	}
 
 	*outputSize = *outputSize - strm.avail_out;
 

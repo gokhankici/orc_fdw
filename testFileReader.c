@@ -17,6 +17,7 @@ int printAllData(StructReader* structReader, int noOfRows)
 
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
+		printf("%-8d",rowNo);
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
 			reader = structReader->fields[columnNo];
@@ -30,7 +31,7 @@ int printAllData(StructReader* structReader, int noOfRows)
 				if (reader->kind == TYPE__KIND__LIST)
 				{
 					listLength = length;
-					listItemKind = ((ListReader*)reader->fieldReader)->itemReader.kind;
+					listItemKind = ((ListReader*) reader->fieldReader)->itemReader.kind;
 					printf("[");
 					for (iterator = 0; iterator < listLength; ++iterator)
 					{
@@ -70,8 +71,8 @@ int printAllData(StructReader* structReader, int noOfRows)
 
 int main(int argc, char **argv)
 {
-//	FILE* orcFile = fopen("/home/gokhan/orc-files/bigrow1.orc", "r");
-	FILE* orcFile = fopen("output_gzip.orc", "r");
+	FILE* orcFile = fopen("/home/gokhan/orc-files/output_gzip_lcomment.orc", "r");
+//	FILE* orcFile = fopen("output_gzip.orc", "r");
 	StructReader structReader;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
@@ -82,6 +83,12 @@ int main(int argc, char **argv)
 	int postScriptSize = 0;
 	long footerSize = 0;
 	int result = 0;
+
+	if (orcFile == NULL)
+	{
+		fprintf(stderr, "File does not exist\n");
+		exit(1);
+	}
 
 	result = readPostscript(orcFile, &postScript, &postScriptSize);
 	if (result)
