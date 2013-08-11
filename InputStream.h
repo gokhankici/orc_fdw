@@ -70,6 +70,8 @@ typedef struct
 	 * 0 if stream is a "really" compressed one.
 	 */
 	char isOriginal;
+	/* offset of the start of the buffer in the uncompressed data */
+	long offset;
 
 	/* this is for reading bytes from cross boundries */
 	char* tempBuffer;
