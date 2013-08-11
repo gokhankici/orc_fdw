@@ -244,6 +244,8 @@ void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset)
 		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind), streamLength);
 		printf("    Encoding type: %-13s | Dict. size: %d\n", getEncodingName(columnEncoding->kind),
 				columnEncoding->has_dictionarysize ? columnEncoding->dictionarysize : 0);
+
+		offset += streamLength;
 	}
 }
 
@@ -253,7 +255,7 @@ int main(int argc, const char * argv[])
 	Footer *footer = NULL;
 //	char* orcFileName = "short.orc";
 	char* orcFileName = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
-	int postScriptSize = 0;
+	long psOffset = 0;
 	long footerSize = 0;
 	uint32_t *versionPointer = NULL;
 	StripeInformation** stripes = NULL;
@@ -266,13 +268,14 @@ int main(int argc, const char * argv[])
 	StripeFooter* stripeFooter;
 	int result = 0;
 
-	/* read post script */
-	result = readPostscript(orcFileName, &postScript, &postScriptSize);
+	result = readPostscript(orcFileName, &postScript, &psOffset);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
-		return 1;
+		exit(1);
 	}
+	footerSize = postScript->footerlength;
+
 
 	/* display the postscript's fields. */
 	footerSize = postScript->footerlength;
@@ -287,11 +290,11 @@ int main(int argc, const char * argv[])
 	printf("Magic : %s\n", postScript->magic);
 
 	/* read the file footer */
-	result = readFileFooter(orcFileName, &footer, 1 + postScriptSize + footerSize, footerSize);
+	result = readFileFooter(orcFileName, &footer, psOffset - footerSize, footerSize);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
-		return 1;
+		exit(1);
 	}
 
 	stripes = footer->stripes;

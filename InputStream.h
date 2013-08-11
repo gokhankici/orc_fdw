@@ -47,7 +47,6 @@ int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLengt
 int FileStream_skip(FileStream*, int skip);
 long FileStream_bytesLeft(FileStream*);
 
-
 typedef struct
 {
 	/* stream for decompression */
@@ -63,14 +62,19 @@ typedef struct
 	int length;
 	/* buffer to store uncompressed data */
 	char* uncompressedBuffer;
-	/* true if uncompressed stream is the same as compressed one */
+	/**
+	 * When stream is very small, it is not compressed. This byte is for providing that information.
+	 * 1 if uncompressed stream is the same as compressed one,
+	 * 0 if stream is a "really" compressed one.
+	 */
 	char isOriginal;
 
 	/* this is for reading bytes from cross boundries */
 	char* tempBuffer;
 } CompressedFileStream;
 
-CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize, CompressionKind kind);
+CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize,
+		CompressionKind kind);
 int CompressedFileStream_free(CompressedFileStream*);
 char* CompressedFileStream_read(CompressedFileStream*, int *length);
 int CompressedFileStream_readRemaining(CompressedFileStream*, char** data, int* dataLength);

@@ -17,7 +17,6 @@ int printAllData(StructReader* structReader, int noOfRows)
 
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
-		printf("%-8d", rowNo);
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
 			reader = structReader->fields[columnNo];
@@ -80,11 +79,11 @@ int main(int argc, char **argv)
 	StripeFooter* stripeFooter = NULL;
 	uint8_t *stripeFooterBuffer = NULL;
 	long stripeFooterOffset = 0;
-	int postScriptSize = 0;
+	long psOffset = 0;
 	long footerSize = 0;
 	int result = 0;
 
-	result = readPostscript(orcFileName, &postScript, &postScriptSize);
+	result = readPostscript(orcFileName, &postScript, &psOffset);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
@@ -93,7 +92,7 @@ int main(int argc, char **argv)
 	footerSize = postScript->footerlength;
 
 	/* read the file footer */
-	result = readFileFooter(orcFileName, &footer, 1 + postScriptSize + footerSize, footerSize);
+	result = readFileFooter(orcFileName, &footer, psOffset - footerSize, footerSize);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading file footer\n");

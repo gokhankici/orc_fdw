@@ -12,7 +12,7 @@
 
 /* read meta-data from the file */
 
-int readPostscript(char* orcFileName, PostScript ** postScriptPtr, int* postScriptSizePtr);
+int readPostscript(char* orcFileName, PostScript ** postScriptPtr, long* postScriptSizeOffset);
 
 int readFileFooter(char* orcFileName, Footer** footer, int footerOffset, long footerSize);
 
@@ -22,7 +22,7 @@ int initStripeReader(Footer* footer, StructReader* reader);
 
 /* read actual data from the file */
 
-int readDataStream(StreamReader* streamReader, Type__Kind streamKind, char* orcFile, long offset, long length, CompressionParameters* parameters);
+int readDataStream(StreamReader* streamReader, Type__Kind streamKind, char* orcFile, long offset, long limit, CompressionParameters* parameters);
 
 int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, char* orcFileName);
 

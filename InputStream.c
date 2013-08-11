@@ -304,7 +304,7 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 	size_t snappyUncompressedSize = 0;
 
 	header = FileStream_read(stream->fileStream, &headerLength);
-	if (headerLength != COMPRESSED_HEADER_SIZE)
+	if (header == NULL || headerLength != COMPRESSED_HEADER_SIZE)
 	{
 		/* couldn't read compressed header */
 		return 1;
@@ -352,7 +352,7 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 
 		result = chunkLength;
 		compressed = FileStream_read(stream->fileStream, &chunkLength);
-		if (result != chunkLength)
+		if (compressed == NULL || result != chunkLength)
 		{
 			fprintf(stderr, "chunk of given length couldn't read from the file\n");
 			return 1;
@@ -425,7 +425,7 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
 		}
 	}
 
-	if (stream->position + requestedLength < stream->length)
+	if (stream->position + requestedLength <= stream->length)
 	{
 		data = stream->uncompressedBuffer + stream->position;
 		stream->position += requestedLength;
@@ -525,7 +525,7 @@ int CompressedFileStream_readRemaining(CompressedFileStream* stream, char** data
 
 			if (newBufferSize - newBufferPosition < stream->length - stream->position)
 			{
-				/* copy buffer to increased temporary buffer */
+				/* if there is not space in the new buffer, copy buffer to another one with increased size */
 				newBufferSize += stream->bufferSize;
 				tempBuffer = malloc(newBufferSize);
 				memcpy(tempBuffer, newBuffer, newBufferPosition);

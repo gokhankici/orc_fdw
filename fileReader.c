@@ -8,7 +8,7 @@
 CompressionParameters compressionParameters =
 { 0 };
 
-int readPostscript(char* orcFileName, PostScript ** postScriptPtr, int* postScriptSizePtr)
+int readPostscript(char* orcFileName, PostScript ** postScriptPtr, long* postScriptOffset)
 {
 	FILE* orcFile = fopen(orcFileName, "r");
 	int isByteRead = 0;
@@ -35,6 +35,7 @@ int readPostscript(char* orcFileName, PostScript ** postScriptPtr, int* postScri
 
 	/* read postscript into the buffer */
 	fseek(orcFile, -1 - psSize, SEEK_END);
+	*postScriptOffset = ftell(orcFile);
 	msg_len = fread(postScriptBuffer, 1, psSize, orcFile);
 	if (msg_len != psSize)
 	{
@@ -50,7 +51,6 @@ int readPostscript(char* orcFileName, PostScript ** postScriptPtr, int* postScri
 		return 1;
 	}
 
-	*postScriptSizePtr = psSize;
 	compressionParameters.compressionBlockSize =
 			(*postScriptPtr)->has_compressionblocksize ? (*postScriptPtr)->compressionblocksize : 0;
 	compressionParameters.compressionKind = (*postScriptPtr)->has_compression ? (*postScriptPtr)->compression : 0;
@@ -74,7 +74,8 @@ int readFileFooter(char* orcFileName, Footer** footer, int footerOffset, long fo
 	result = CompressedFileStream_readRemaining(stream, &uncompressedFooter, &uncompressedFooterSize);
 	if (result)
 	{
-		fprintf(stderr, "Error while uncompressing file footer");
+		fprintf(stderr, "Error while uncompressing file footer\n");
+		return 1;
 	}
 
 	*footer = footer__unpack(NULL, uncompressedFooterSize, (uint8_t*) uncompressedFooter);
@@ -97,8 +98,9 @@ int readStripeFooter(char* orcFileName, StripeFooter** stripeFooter, StripeInfor
 	long stripeFooterOffset = stripeInfo->offset + (stripeInfo->has_indexlength ? stripeInfo->indexlength : 0)
 			+ stripeInfo->datalength;
 	int result = 0;
-	CompressedFileStream *stream = CompressedFileStream_init(orcFileName, stripeFooterOffset, stripeInfo->footerlength,
-			compressionParameters.compressionBlockSize, compressionParameters.compressionKind);
+	CompressedFileStream *stream = CompressedFileStream_init(orcFileName, stripeFooterOffset,
+			stripeFooterOffset + stripeInfo->footerlength, compressionParameters.compressionBlockSize,
+			compressionParameters.compressionKind);
 	if (stream == NULL)
 	{
 		fprintf(stderr, "Error reading file stream\n");
@@ -199,13 +201,17 @@ int initStripeReader(Footer* footer, StructReader* reader)
 int readDataStream(StreamReader* streamReader, Type__Kind streamKind, char* orcFile, long offset, long length,
 		CompressionParameters* parameters)
 {
-	if (streamReader->stream != NULL && CompressedFileStream_free(streamReader->stream))
+	if (streamReader->stream != NULL)
 	{
+		if(CompressedFileStream_free(streamReader->stream))
+		{
 		fprintf(stderr, "Error deleting previous compressed file stream\n");
 		return 1;
+		}
+		streamReader->stream = NULL;
 	}
 
-	return initStreamReader(streamKind, streamReader, orcFile, offset, offset + length, parameters);
+	return initStreamReader(streamKind, streamReader, orcFile, offset, length, parameters);
 }
 
 int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, char* orcFileName)
