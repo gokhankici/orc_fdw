@@ -251,8 +251,8 @@ int main(int argc, const char * argv[])
 {
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
-//	FILE* orcFile = fopen("short.orc", "r");
-	FILE* orcFile = fopen("/home/gokhan/orc-files/output_gzip_lcomment.orc", "r");
+//	char* orcFileName = "short.orc";
+	char* orcFileName = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
 	int postScriptSize = 0;
 	long footerSize = 0;
 	uint32_t *versionPointer = NULL;
@@ -267,7 +267,7 @@ int main(int argc, const char * argv[])
 	int result = 0;
 
 	/* read post script */
-	result = readPostscript(orcFile, &postScript, &postScriptSize);
+	result = readPostscript(orcFileName, &postScript, &postScriptSize);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
@@ -287,7 +287,7 @@ int main(int argc, const char * argv[])
 	printf("Magic : %s\n", postScript->magic);
 
 	/* read the file footer */
-	result = readFileFooter(orcFile, &footer, 1 + postScriptSize + footerSize, footerSize);
+	result = readFileFooter(orcFileName, &footer, 1 + postScriptSize + footerSize, footerSize);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
@@ -351,7 +351,7 @@ int main(int argc, const char * argv[])
 	for (index = 0; index < noOfStripes; ++index)
 	{
 		stripe = stripes[index];
-		result = readStripeFooter(orcFile, &stripeFooter, stripe);
+		result = readStripeFooter(orcFileName, &stripeFooter, stripe);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe footer\n");
@@ -365,8 +365,6 @@ int main(int argc, const char * argv[])
 	/* Free the unpacked message */
 	post_script__free_unpacked(postScript, NULL);
 	footer__free_unpacked(footer, NULL);
-
-	fclose(orcFile);
 
 	return 0;
 }

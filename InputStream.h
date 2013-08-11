@@ -9,6 +9,7 @@
 #define INPUTSTREAM_H_
 
 #include <stdio.h>
+#include "orc_proto.pb-c.h"
 
 typedef struct
 {
@@ -42,8 +43,10 @@ typedef struct
 FileStream* FileStream_init(char* filePath, long offset, long limit, int bufferSize);
 int FileStream_free(FileStream*);
 char* FileStream_read(FileStream*, int *length);
+int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLength);
 int FileStream_skip(FileStream*, int skip);
 long FileStream_bytesLeft(FileStream*);
+
 
 typedef struct
 {
@@ -70,6 +73,7 @@ typedef struct
 CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize, CompressionKind kind);
 int CompressedFileStream_free(CompressedFileStream*);
 char* CompressedFileStream_read(CompressedFileStream*, int *length);
+int CompressedFileStream_readRemaining(CompressedFileStream*, char** data, int* dataLength);
 int CompressedFileStream_readByte(CompressedFileStream* stream, char* value);
 
 #endif /* INPUTSTREAM_H_ */

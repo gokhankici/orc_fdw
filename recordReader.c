@@ -373,7 +373,6 @@ static int readDouble(StreamReader* fpState, double *data)
  */
 static int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length)
 {
-	int bytePosition = 0;
 	int requiredLength = length;
 	char* bytes = CompressedFileStream_read(binaryReaderState->stream, &length);
 	if (bytes == NULL || requiredLength != length)

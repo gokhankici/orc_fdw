@@ -73,7 +73,6 @@ int main(int argc, char **argv)
 {
 	char orcFileName[] = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
 //	char orcFileName[] = "output_gzip.orc";
-	FILE* orcFile = fopen(orcFileName, "r");
 	StructReader structReader;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
@@ -85,13 +84,7 @@ int main(int argc, char **argv)
 	long footerSize = 0;
 	int result = 0;
 
-	if (orcFile == NULL)
-	{
-		fprintf(stderr, "File does not exist\n");
-		exit(1);
-	}
-
-	result = readPostscript(orcFile, &postScript, &postScriptSize);
+	result = readPostscript(orcFileName, &postScript, &postScriptSize);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
@@ -100,7 +93,7 @@ int main(int argc, char **argv)
 	footerSize = postScript->footerlength;
 
 	/* read the file footer */
-	result = readFileFooter(orcFile, &footer, 1 + postScriptSize + footerSize, footerSize);
+	result = readFileFooter(orcFileName, &footer, 1 + postScriptSize + footerSize, footerSize);
 	if (result)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
@@ -120,7 +113,7 @@ int main(int argc, char **argv)
 		stripe = footer->stripes[i];
 		stripeFooterOffset = stripe->offset + stripe->datalength
 				+ ((stripe->has_indexlength) ? stripe->indexlength : 0);
-		result = readStripeFooter(orcFile, &stripeFooter, stripe);
+		result = readStripeFooter(orcFileName, &stripeFooter, stripe);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe footer\n");

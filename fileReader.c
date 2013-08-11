@@ -2,18 +2,25 @@
 #include "orc_proto.pb-c.h"
 #include "fileReader.h"
 #include "recordReader.h"
+#include "InputStream.h"
 #include "util.h"
 
 CompressionParameters compressionParameters =
 { 0 };
 
-int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSizePtr)
+int readPostscript(char* orcFileName, PostScript ** postScriptPtr, int* postScriptSizePtr)
 {
+	FILE* orcFile = fopen(orcFileName, "r");
 	int isByteRead = 0;
 	char c = 0;
 	size_t msg_len = 0;
 	uint8_t postScriptBuffer[MAX_POSTSCRIPT_SIZE];
 	int psSize = 0;
+
+	if (orcFile == NULL)
+	{
+		return 1;
+	}
 
 	fseek(orcFile, -1, SEEK_END);
 	isByteRead = fread(&c, sizeof(char), 1, orcFile);
@@ -52,33 +59,25 @@ int readPostscript(FILE* orcFile, PostScript ** postScriptPtr, int* postScriptSi
 
 int readFileFooter(char* orcFileName, Footer** footer, int footerOffset, long footerSize)
 {
-	int msg_len = 0;
-	uint8_t* compressedFooterBuffer = NULL;
+	char* uncompressedFooter = NULL;
+	int uncompressedFooterSize = 0;
 	int result = 0;
 	CompressedFileStream* stream = CompressedFileStream_init(orcFileName, footerOffset, footerOffset + footerSize,
 			compressionParameters.compressionBlockSize, compressionParameters.compressionKind);
+	if (stream == NULL)
+	{
+		fprintf(stderr, "Error reading file stream\n");
+		return 1;
+	}
 	*footer = NULL;
 
-	/* read the file footer */
-	fseek(orcFile, -footerOffsetFromEnd, SEEK_END);
-	compressedFooterBuffer = malloc(footerSize);
-	msg_len = fread(compressedFooterBuffer, 1, footerSize, orcFile);
-	if (msg_len != footerSize)
-	{
-		printf("Error while reading footer from file\n");
-		return 1;
-	}
-
-	stream->array = compressedFooterBuffer;
-	stream->size = footerSize;
-	result = uncompressStream(stream);
+	result = CompressedFileStream_readRemaining(stream, &uncompressedFooter, &uncompressedFooterSize);
 	if (result)
 	{
-		fprintf(stderr, "error while uncompressing file footer stream\n");
-		return 1;
+		fprintf(stderr, "Error while uncompressing file footer");
 	}
 
-	*footer = footer__unpack(NULL, stream->uncompressed->length, stream->uncompressed->buffer);
+	*footer = footer__unpack(NULL, uncompressedFooterSize, (uint8_t*) uncompressedFooter);
 	/* unpack the message using protobuf-c. */
 	if (*footer == NULL)
 	{
@@ -86,46 +85,41 @@ int readFileFooter(char* orcFileName, Footer** footer, int footerOffset, long fo
 		return 1;
 	}
 
-	freeCompressedStream(stream, 0);
+	CompressedFileStream_free(stream);
 
 	return 0;
 }
 
-int readStripeFooter(FILE* orcFile, StripeFooter** stripeFooter, StripeInformation* stripeInfo)
+int readStripeFooter(char* orcFileName, StripeFooter** stripeFooter, StripeInformation* stripeInfo)
 {
-	CompressedStream *stream = initCompressedStream(&compressionParameters);
-	uint8_t *stripeFooterBuffer = malloc(stripeInfo->footerlength);
+	char *stripeFooterBuffer = NULL;
+	int uncompressedStripeFooterSize = 0;
 	long stripeFooterOffset = stripeInfo->offset + (stripeInfo->has_indexlength ? stripeInfo->indexlength : 0)
 			+ stripeInfo->datalength;
 	int result = 0;
-
+	CompressedFileStream *stream = CompressedFileStream_init(orcFileName, stripeFooterOffset, stripeInfo->footerlength,
+			compressionParameters.compressionBlockSize, compressionParameters.compressionKind);
+	if (stream == NULL)
+	{
+		fprintf(stderr, "Error reading file stream\n");
+		return 1;
+	}
 	*stripeFooter = NULL;
 
-	fseek(orcFile, stripeFooterOffset, SEEK_SET);
-	result = fread(stripeFooterBuffer, 1, stripeInfo->footerlength, orcFile);
-	if (result != stripeInfo->footerlength)
-	{
-		fprintf(stderr, "Error while reading stripe footer.\n");
-		return 1;
-	}
-
-	stream->array = stripeFooterBuffer;
-	stream->size = stripeInfo->footerlength;
-	result = uncompressStream(stream);
+	result = CompressedFileStream_readRemaining(stream, &stripeFooterBuffer, &uncompressedStripeFooterSize);
 	if (result)
 	{
-		fprintf(stderr, "error while uncompressing stripe footer stream\n");
-		return 1;
+		fprintf(stderr, "Error while uncompressing file footer");
 	}
 
-	*stripeFooter = stripe_footer__unpack(NULL, stream->uncompressed->length, stream->uncompressed->buffer);
+	*stripeFooter = stripe_footer__unpack(NULL, uncompressedStripeFooterSize, (uint8_t*) stripeFooterBuffer);
 	if (*stripeFooter == NULL)
 	{
 		fprintf(stderr, "error while unpacking stripe footer\n");
 		return 1;
 	}
 
-	freeCompressedStream(stream, 0);
+	CompressedFileStream_free(stream);
 
 	return 0;
 }
@@ -202,38 +196,16 @@ int initStripeReader(Footer* footer, StructReader* reader)
 	return 0;
 }
 
-int readDataStream(StreamReader* streamReader, Type__Kind streamKind, char* orcFile, long offset, long length)
+int readDataStream(StreamReader* streamReader, Type__Kind streamKind, char* orcFile, long offset, long length,
+		CompressionParameters* parameters)
 {
-	uint8_t* buffer = NULL;
-	uint8_t* uncompressedData = NULL;
-	long dataLength = 0;
-	CompressedStream *stream = initCompressedStream(&compressionParameters);
-	int result = 0;
-
-	if (streamReader->stream != NULL)
+	if (streamReader->stream != NULL && CompressedFileStream_free(streamReader->stream))
 	{
-		free(streamReader->stream);
-	}
-
-	buffer = malloc(length);
-	fseek(orcFile, offset, SEEK_SET);
-	fread(buffer, length, 1, orcFile);
-
-	stream->array = buffer;
-	stream->size = length;
-	result = uncompressStream(stream);
-	if (result)
-	{
-		fprintf(stderr, "error while uncompressing data stream\n");
+		fprintf(stderr, "Error deleting previous compressed file stream\n");
 		return 1;
 	}
 
-	uncompressedData = stream->uncompressed->buffer;
-	dataLength = stream->uncompressed->length;
-
-	freeCompressedStream(stream, 1);
-
-	return initStreamReader(streamKind, streamReader, "", offset, offset + length, &compressionParameters);
+	return initStreamReader(streamKind, streamReader, orcFile, offset, offset + length, parameters);
 }
 
 int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, char* orcFileName)
