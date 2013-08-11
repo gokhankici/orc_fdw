@@ -19,6 +19,12 @@ typedef struct
 	long compressionBlockSize;
 } CompressionParameters;
 
+typedef struct
+{
+	long compressedOffset;
+	long uncompressedOffset;
+} FileOffset;
+
 extern CompressionParameters compressionParameters;
 
 typedef struct
@@ -70,11 +76,16 @@ typedef struct
 	 * 0 if stream is a "really" compressed one.
 	 */
 	char isOriginal;
-	/* offset of the start of the buffer in the uncompressed data */
+	/* offset of the start of the buffer in the uncompressed data stream */
 	long offset;
 
 	/* this is for reading bytes from cross boundries */
 	char* tempBuffer;
+
+	/* a list to store the offsets of the blocks in (un)compressed streams */
+	FileOffset* blockLocations;
+	/* no of seen blocks so far */
+	int noOfBlocks;
 } CompressedFileStream;
 
 CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize,

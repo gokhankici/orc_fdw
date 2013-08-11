@@ -115,3 +115,69 @@ void printFieldValue(FILE* file, FieldValue* value, Type__Kind kind, int length)
 		break;
 	}
 }
+
+void* lower_bound(void* key, void* base, size_t noOfElements, size_t size, int (*comp)(const void*, const void*))
+{
+	void* iterator = NULL;
+	void* first = base;
+	size_t step = 0;
+	size_t count = noOfElements;
+
+	while (count > 0)
+	{
+		iterator = first;
+		step = count / 2;
+		iterator += step * size;
+		if (comp(iterator, key) < 0)
+		{
+			iterator += size;
+			first = iterator;
+			count -= step + 1;
+		}
+		else
+		{
+			count = step;
+		}
+	}
+	return (first < base + noOfElements * size) ? first : NULL;
+}
+
+void* upper_bound(void* key, void* base, size_t noOfElements, size_t size, int (*comp)(const void*, const void*))
+{
+	void* iterator = NULL;
+	void* first = base;
+	size_t step = 0;
+	size_t count = noOfElements;
+
+	while (count > 0)
+	{
+		iterator = first;
+		step = count / 2;
+		iterator += step * size;
+		if (comp(key, iterator) >= 0)
+		{
+			iterator += size;
+			first = iterator;
+			count -= step + 1;
+		}
+		else
+			count = step;
+	}
+	return (first < base + noOfElements * size) ? first : NULL;
+}
+
+int compareInt(const void* xPtr, const void* yPtr)
+{
+	int x = *(int*) xPtr;
+	int y = *(int*) yPtr;
+
+	return (x < y) ? -1 : (x > y);
+}
+
+int compareLong(const void* xPtr, const void* yPtr)
+{
+	long x = *(long*) xPtr;
+	long y = *(long*) yPtr;
+
+	return (x < y) ? -1 : (x > y);
+}
