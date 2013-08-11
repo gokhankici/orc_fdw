@@ -24,6 +24,6 @@ int initStripeReader(Footer* footer, StructReader* reader);
 
 int readDataStream(StreamReader* streamReader, Type__Kind streamKind, FILE* orcFile, long offset, long length);
 
-int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, FILE* orcFile);
+int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, char* orcFileName);
 
 #endif /* FILEREADER_H_ */

@@ -169,6 +169,34 @@ char* FileStream_read(FileStream* fileStream, int *length)
 	return data;
 }
 
+char* FileStream_readRemaining(FileStream* fileStream)
+{
+	char* newBuffer = NULL;
+	char* data = NULL;
+	int remainingLength = fileStream->limit - (fileStream->offset + fileStream->position);
+
+	if (remainingLength <= fileStream->bufferSize)
+	{
+		FileStream_fill(fileStream);
+		data = fileStream->buffer + fileStream->position;
+	}
+	else
+	{
+		newBuffer = malloc(remainingLength);
+		fileStream->bufferSize = remainingLength;
+		memcpy(newBuffer, fileStream->buffer + fileStream->position, fileStream->length - fileStream->position);
+		fileStream->offset += fileStream->position;
+		fileStream->length -= fileStream->position;
+		fileStream->position = 0;
+		free(fileStream->buffer);
+
+		FileStream_fill(fileStream);
+		data = fileStream->buffer + fileStream->position;
+	}
+
+	return data;
+}
+
 /**
  * Skip that many bytes from the stream
  */
@@ -448,3 +476,27 @@ int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
 	return 0;
 }
 
+int CompressedFileStream_readBlock(CompressedFileStream* stream, char** data, int* dataLength)
+{
+	int result = 0;
+	char* newBuffer = NULL;
+	int bytesCurrentlyRead = 0;
+
+	if (stream->compressionKind == COMPRESSION_KIND__NONE)
+	{
+		/* if there is no compression, read directly from FileStream */
+		return FileStream_readRemaining(stream->fileStream);
+	}
+
+	if (stream->length == 0 || stream->position == stream->length)
+	{
+		result = readCompressedStreamHeader(stream);
+		if (result)
+		{
+			fprintf(stderr, "Error reading compressed stream header\n");
+			return NULL;
+		}
+	}
+
+	return stream->uncompressedBuffer + stream->position;
+}

@@ -17,7 +17,7 @@ int printAllData(StructReader* structReader, int noOfRows)
 
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
-		printf("%-8d",rowNo);
+		printf("%-8d", rowNo);
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
 			reader = structReader->fields[columnNo];
@@ -71,8 +71,9 @@ int printAllData(StructReader* structReader, int noOfRows)
 
 int main(int argc, char **argv)
 {
-	FILE* orcFile = fopen("/home/gokhan/orc-files/output_gzip_lcomment.orc", "r");
-//	FILE* orcFile = fopen("output_gzip.orc", "r");
+	char orcFileName[] = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
+//	char orcFileName[] = "output_gzip.orc";
+	FILE* orcFile = fopen(orcFileName, "r");
 	StructReader structReader;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
@@ -126,7 +127,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, &structReader, orcFile);
+		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, &structReader, orcFileName);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe data\n");
