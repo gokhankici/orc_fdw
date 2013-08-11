@@ -54,6 +54,8 @@ int readPostscript(char* orcFileName, PostScript ** postScriptPtr, long* postScr
 	compressionParameters.compressionBlockSize =
 			(*postScriptPtr)->has_compressionblocksize ? (*postScriptPtr)->compressionblocksize : 0;
 	compressionParameters.compressionKind = (*postScriptPtr)->has_compression ? (*postScriptPtr)->compression : 0;
+
+	fclose(orcFile);
 	return 0;
 }
 
@@ -239,7 +241,7 @@ int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* st
 
 	while (streamNo < stripeFooter->n_streams)
 	{
-		assert(stream->kind != STREAM__KIND__ROW_INDEX);
+//		assert(stream->kind != STREAM__KIND__ROW_INDEX);
 
 		reader = readers[fieldNo++];
 

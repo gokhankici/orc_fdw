@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include "orc_proto.pb-c.h"
 
+#define DEFAULT_BUFFER_SIZE 262144
+
 typedef struct
 {
 	CompressionKind compressionKind;

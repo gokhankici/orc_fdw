@@ -688,7 +688,7 @@ void freePrimitiveReader(PrimitiveReader* reader)
 	{
 		if (reader->readers[iterator].stream != NULL)
 		{
-			free(reader->readers[iterator].stream);
+			CompressedFileStream_free(reader->readers[iterator].stream);
 			reader->readers[iterator].stream = NULL;
 		}
 	}

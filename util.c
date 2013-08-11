@@ -71,7 +71,7 @@ int inf(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 	return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
 }
 
-void printFieldValue(FieldValue* value, Type__Kind kind, int length)
+void printFieldValue(FILE* file, FieldValue* value, Type__Kind kind, int length)
 {
 	char* timespecBuffer = NULL;
 	uint8_t *binaryValues = NULL;
@@ -80,35 +80,35 @@ void printFieldValue(FieldValue* value, Type__Kind kind, int length)
 	switch (kind)
 	{
 	case TYPE__KIND__BOOLEAN:
-		printf("%d", (int) value->value8);
+		fprintf(file, "%d", (int) value->value8);
 		break;
 	case TYPE__KIND__BYTE:
-		printf("%.2X", value->value8);
+		fprintf(file, "%.2X", value->value8);
 		break;
 	case TYPE__KIND__SHORT:
 	case TYPE__KIND__INT:
 	case TYPE__KIND__LONG:
-		printf("%ld", value->value64);
+		fprintf(file, "%ld", value->value64);
 		break;
 	case TYPE__KIND__FLOAT:
-		printf("%.2f", value->floatValue);
+		fprintf(file, "%.2f", value->floatValue);
 		break;
 	case TYPE__KIND__DOUBLE:
-		printf("%.2lf", value->doubleValue);
+		fprintf(file, "%.2lf", value->doubleValue);
 		break;
 	case TYPE__KIND__STRING:
-		printf("%s", value->binary);
+		fprintf(file, "%s", value->binary);
 		break;
 	case TYPE__KIND__TIMESTAMP:
 		timespecBuffer = malloc(TIMESPEC_BUFFER_LENGTH);
 		timespecToStr(timespecBuffer, &value->time);
-		printf("%s", timespecBuffer);
+		fprintf(file, "%s", timespecBuffer);
 		break;
 	case TYPE__KIND__BINARY:
 		binaryValues = (uint8_t*) value->binary;
 		for (iterator = 0; iterator < length; ++iterator)
 		{
-			printf("%.2X", binaryValues[iterator]);
+			fprintf(file, "%.2X", binaryValues[iterator]);
 		}
 		break;
 	default:

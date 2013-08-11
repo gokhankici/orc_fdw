@@ -3,7 +3,7 @@
 #include "recordReader.h"
 #include "util.h"
 
-int printAllData(StructReader* structReader, int noOfRows)
+int printAllData(FILE* file, StructReader* structReader, int noOfRows)
 {
 	Reader* reader = NULL;
 	int rowNo = 0;
@@ -14,16 +14,24 @@ int printAllData(StructReader* structReader, int noOfRows)
 	int isNull = 0;
 	int iterator = 0;
 	Type__Kind listItemKind = 0;
+	if (file == NULL)
+	{
+		fprintf(stderr, "Cannot open file to read.");
+		return 1;
+	}
 
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
+			if(columnNo == 15){
+				printf("here");
+			}
 			reader = structReader->fields[columnNo];
 			isNull = readField(reader, &field, &length);
 			if (isNull)
 			{
-				printf("(NULL)|");
+				fprintf(file, "(NULL)|");
 			}
 			else if (isNull == 0)
 			{
@@ -31,30 +39,30 @@ int printAllData(StructReader* structReader, int noOfRows)
 				{
 					listLength = length;
 					listItemKind = ((ListReader*) reader->fieldReader)->itemReader.kind;
-					printf("[");
+					fprintf(file, "[");
 					for (iterator = 0; iterator < listLength; ++iterator)
 					{
 						length = field.listItemSizes ? field.listItemSizes[iterator] : 0;
 						isNull = field.isItemNull[iterator];
 						if (isNull)
 						{
-							printf("(NULL),");
+							fprintf(file, "(NULL),");
 						}
 						else
 						{
-							printFieldValue(&field.list[iterator], listItemKind, length);
-							printf(",");
+							printFieldValue(file, &field.list[iterator], listItemKind, length);
+							fprintf(file, ",");
 						}
 					}
-					printf("]|");
+					fprintf(file, "]|");
 					free(field.list);
 					free(field.isItemNull);
 					free(field.listItemSizes);
 				}
 				else
 				{
-					printFieldValue(&field.value, reader->kind, length);
-					printf("|");
+					printFieldValue(file, &field.value, reader->kind, length);
+					fprintf(file, "|");
 				}
 			}
 			else
@@ -62,7 +70,8 @@ int printAllData(StructReader* structReader, int noOfRows)
 				return isNull;
 			}
 		}
-		printf("\n");
+		fprintf(file, "\n");
+		fflush(file);
 	}
 
 	return 0;
@@ -72,6 +81,10 @@ int main(int argc, char **argv)
 {
 	char orcFileName[] = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
 //	char orcFileName[] = "output_gzip.orc";
+	char outputFileName[] = "/tmp/test";
+	FILE* outputFile = fopen(outputFileName, "w");
+//	FILE* outputFile = stdout;
+
 	StructReader structReader;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
@@ -82,6 +95,11 @@ int main(int argc, char **argv)
 	long psOffset = 0;
 	long footerSize = 0;
 	int result = 0;
+	if (outputFile == NULL)
+	{
+		fprintf(stderr, "Cannot open file to write\n");
+		return 1;
+	}
 
 	result = readPostscript(orcFileName, &postScript, &psOffset);
 	if (result)
@@ -126,7 +144,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = printAllData(&structReader, stripe->numberofrows);
+		result = printAllData(outputFile, &structReader, stripe->numberofrows);
 		if (result)
 		{
 			fprintf(stderr, "Error while printing values\n");

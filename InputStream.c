@@ -11,8 +11,6 @@
 #include "util.h"
 #include "snappy-c/snappy.h"
 
-#define DEFAULT_BUFFER_SIZE 262144
-
 /**
  * Initialize a FileStream, from starting at an offset and with a limit.
  * Buffer size gives the maximum size that can be read at a time.
