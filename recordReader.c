@@ -27,31 +27,30 @@ static int parseNanos(long serialized)
  * Reads the variable-length integer from the stream and puts it into data.
  * Return -1 for error or positive for no of bytes read.
  */
-static long readVarLenInteger(uint8_t* stream, long streamLength, uint64_t *data)
+static long readVarLenInteger(CompressedFileStream* stream, uint64_t *data)
 {
 	*data = 0;
 	int shift = 0;
 	long bytesRead = 0;
+	char byte = 0;
 
-	if (streamLength <= 0)
+	if (CompressedFileStream_readByte(stream, &byte))
 	{
-		/* not enough bytes in the stream */
 		return -1;
 	}
 
-	while (((*stream) & 0x80) != 0)
+	while ((byte & 0x80) != 0)
 	{
-		if (--streamLength < 1)
-		{
-			/* not enough bytes in the stream */
-			return -1;
-		}
-
-		*data |= (uint64_t) (*(stream++) & 0x7F) << shift;
+		*data |= (uint64_t) (byte & 0x7F) << shift;
 		shift += 7;
 		bytesRead++;
+
+		if (CompressedFileStream_readByte(stream, &byte))
+		{
+			return -1;
+		}
 	}
-	*data |= (uint64_t) *stream << shift;
+	*data |= (uint64_t) byte << shift;
 
 	return ++bytesRead;
 }
@@ -59,31 +58,20 @@ static long readVarLenInteger(uint8_t* stream, long streamLength, uint64_t *data
 /**
  * Initialize a boolean reader for reading.
  */
-static int initBooleanReader(StreamReader* boolState, uint8_t* stream, long streamLength)
+static int initBooleanReader(StreamReader* boolState)
 {
 	char type = 0;
 
-	if (streamLength < 2)
+	if (CompressedFileStream_readByte(boolState->stream, &type))
 	{
-		/* stream is too short */
-		fprintf(stderr, "Stream is too short!\n");
 		return -1;
 	}
-
-	type = (char) *(stream++);
 
 	if (type < 0)
 	{
 		/* -type var-len integers follow */
 		boolState->currentEncodingType = VARIABLE_LENGTH;
 		boolState->noOfLeftItems = -type - 1;
-
-		if (streamLength - 1 < boolState->noOfLeftItems)
-		{
-			/* there have to more bytes left on the stream */
-			fprintf(stderr, "Byte stream ended prematurely!");
-			return -1;
-		}
 	}
 	else
 	{
@@ -92,11 +80,13 @@ static int initBooleanReader(StreamReader* boolState, uint8_t* stream, long stre
 		boolState->noOfLeftItems = type + 3 - 1;
 	}
 
-	boolState->data = *(stream++);
+	if (CompressedFileStream_readByte(boolState->stream, &type))
+	{
+		return -1;
+	}
+
+	boolState->data = (uint8_t) type;
 	boolState->mask = 0x80;
-	boolState->streamPointer = stream;
-	/* for both cases we read 2 bytes */
-	boolState->streamLength = streamLength - 2;
 
 	return 0;
 }
@@ -104,35 +94,22 @@ static int initBooleanReader(StreamReader* boolState, uint8_t* stream, long stre
 /**
  * Initialize an var-length integer reader for reading.
  */
-static int initByteReader(StreamReader* byteState, uint8_t* stream, long streamLength)
+static int initByteReader(StreamReader* byteState)
 {
 	char type = 0;
 
-	if (streamLength < 2)
+	if (CompressedFileStream_readByte(byteState->stream, &type))
 	{
-		/* stream is too short */
-		fprintf(stderr, "Stream is too short!\n");
 		return -1;
 	}
-
-	type = (char) *(stream++);
 
 	if (type < 0)
 	{
 		/* -type var-len integers follow */
 		byteState->currentEncodingType = VARIABLE_LENGTH;
 		byteState->noOfLeftItems = -type;
-		byteState->streamPointer = stream;
-		byteState->streamLength = streamLength - 1;
 		byteState->data = 0;
 		byteState->step = 0;
-
-		if (byteState->streamLength < byteState->noOfLeftItems)
-		{
-			/* there have to be bytes left on the stream */
-			fprintf(stderr, "Byte stream ended prematurely!");
-			return -1;
-		}
 	}
 	else
 	{
@@ -142,9 +119,12 @@ static int initByteReader(StreamReader* byteState, uint8_t* stream, long streamL
 
 		/* step is always 0 for byte streams */
 		byteState->step = 0;
-		byteState->data = *stream++;
-		byteState->streamPointer = stream;
-		byteState->streamLength = streamLength - 2;
+
+		if (CompressedFileStream_readByte(byteState->stream, &type))
+		{
+			return -1;
+		}
+		byteState->data = (uint8_t) type;
 	}
 
 	return 0;
@@ -153,27 +133,21 @@ static int initByteReader(StreamReader* byteState, uint8_t* stream, long streamL
 /**
  * Initialize an var-length integer reader for reading.
  */
-static int initIntegerReader(Type__Kind kind, StreamReader* intState, uint8_t* stream, long streamLength)
+static int initIntegerReader(Type__Kind kind, StreamReader* intState)
 {
 	char type = 0;
 	long bytesRead = 0;
 
-	if (streamLength < 2)
+	if (CompressedFileStream_readByte(intState->stream, &type))
 	{
-		/* stream is too short */
-		fprintf(stderr, "Stream is too short!\n");
 		return -1;
 	}
-
-	type = (char) *(stream++);
 
 	if (type < 0)
 	{
 		/* -type var-len integers follow */
 		intState->currentEncodingType = VARIABLE_LENGTH;
 		intState->noOfLeftItems = -type;
-		intState->streamPointer = stream;
-		intState->streamLength = streamLength - 1;
 		intState->step = 0;
 		intState->data = 0;
 	}
@@ -183,63 +157,43 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState, uint8_t* s
 		intState->currentEncodingType = RLE;
 		intState->noOfLeftItems = type + 3;
 
-		intState->step = *stream++;
-		bytesRead = readVarLenInteger(stream, streamLength - 2, &intState->data);
+		if (CompressedFileStream_readByte(intState->stream, &intState->step))
+		{
+			return -1;
+		}
+
+		bytesRead = readVarLenInteger(intState->stream, &intState->data);
 		if (bytesRead < 0)
 		{
 			/* stream is too short */
 			fprintf(stderr, "Error while reading var-len int from stream!\n");
 			return -1;
 		}
-
-		intState->streamPointer = stream + bytesRead;
-		intState->streamLength = streamLength - bytesRead - 2;
-	}
-
-	return 0;
-}
-
-/**
- * Initialize an floating point reader for reading.
- */
-static int initFPReader(StreamReader* fpState, uint8_t* stream, long streamLength)
-{
-	fpState->streamPointer = stream;
-	fpState->streamLength = streamLength;
-	if (streamLength % 4)
-	{
-		/* length has to be a multiple of 4 */
-		return -1;
 	}
 	return 0;
 }
 
-static int initBinaryReader(StreamReader* binaryState, uint8_t* stream, long streamLength)
+int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, char* fileName, long offset, long limit,
+		CompressionParameters* parameters)
 {
-	binaryState->streamPointer = stream;
-	binaryState->streamLength = streamLength;
-	return 0;
-}
-
-int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, uint8_t* stream, long streamLength)
-{
-	streamReader->stream = stream;
+	streamReader->stream = CompressedFileStream_init(fileName, offset, limit, parameters->compressionBlockSize,
+			parameters->compressionKind);
 
 	switch (streamKind)
 	{
 	case TYPE__KIND__BOOLEAN:
-		return initBooleanReader(streamReader, stream, streamLength);
+		return initBooleanReader(streamReader);
 	case TYPE__KIND__BYTE:
-		return initByteReader(streamReader, stream, streamLength);
+		return initByteReader(streamReader);
 	case TYPE__KIND__SHORT:
 	case TYPE__KIND__INT:
 	case TYPE__KIND__LONG:
-		return initIntegerReader(streamKind, streamReader, stream, streamLength);
+		return initIntegerReader(streamKind, streamReader);
 	case TYPE__KIND__FLOAT:
 	case TYPE__KIND__DOUBLE:
-		return initFPReader(streamReader, stream, streamLength);
 	case TYPE__KIND__BINARY:
-		return initBinaryReader(streamReader, stream, streamLength);
+		/* no need for initializer */
+		return 0;
 	default:
 		return -1;
 	}
@@ -259,8 +213,7 @@ static char readBoolean(StreamReader* booleanReaderState)
 		if (booleanReaderState->noOfLeftItems == 0)
 		{
 			/* try to re-initialize the reader */
-			int initResult = initBooleanReader(booleanReaderState, booleanReaderState->streamPointer,
-					booleanReaderState->streamLength);
+			int initResult = initBooleanReader(booleanReaderState);
 			if (initResult)
 			{
 				/* error while reading from input stream */
@@ -273,8 +226,11 @@ static char readBoolean(StreamReader* booleanReaderState)
 			if (booleanReaderState->currentEncodingType == VARIABLE_LENGTH)
 			{
 				/* read next byte from the stream */
-				booleanReaderState->data = *(booleanReaderState->streamPointer++);
-				booleanReaderState->streamLength--;
+				if (CompressedFileStream_readByte(booleanReaderState->stream, &result))
+				{
+					return -1;
+				}
+				booleanReaderState->data = (uint8_t) result;
 			}
 
 			booleanReaderState->mask = 0x80;
@@ -292,14 +248,14 @@ static char readBoolean(StreamReader* booleanReaderState)
  * Reads an integer from the stream.
  * Conversion from mixed sign to actual sign isn't done.
  */
-static int readByte(StreamReader* intReaderState, uint8_t *result)
+static int readByte(StreamReader* byteReaderState, uint8_t *result)
 {
 	*result = 0;
 
-	if (intReaderState->noOfLeftItems == 0)
+	if (byteReaderState->noOfLeftItems == 0)
 	{
 		/* try to re-initialize the reader */
-		int initResult = initByteReader(intReaderState, intReaderState->streamPointer, intReaderState->streamLength);
+		int initResult = initByteReader(byteReaderState);
 
 		if (initResult)
 		{
@@ -310,17 +266,19 @@ static int readByte(StreamReader* intReaderState, uint8_t *result)
 	}
 
 	/* try to read from the stream or generate an item from run */
-	if (intReaderState->currentEncodingType == VARIABLE_LENGTH)
+	if (byteReaderState->currentEncodingType == VARIABLE_LENGTH)
 	{
-		*result = *intReaderState->streamPointer++;
-		intReaderState->streamLength--;
+		if (CompressedFileStream_readByte(byteReaderState->stream, (char*) result))
+		{
+			return -1;
+		}
 	}
 	else
 	{
-		*result = intReaderState->data;
+		*result = byteReaderState->data;
 	}
 
-	intReaderState->noOfLeftItems--;
+	byteReaderState->noOfLeftItems--;
 	return 0;
 }
 
@@ -338,8 +296,7 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 	if (intReaderState->noOfLeftItems == 0)
 	{
 		/* try to re-initialize the reader */
-		int initResult = initIntegerReader(kind, intReaderState, intReaderState->streamPointer,
-				intReaderState->streamLength);
+		int initResult = initIntegerReader(kind, intReaderState);
 		if (initResult)
 		{
 			/* error while reading from input stream */
@@ -351,8 +308,7 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 	/* try to read from the stream or generate an item from run */
 	if (intReaderState->currentEncodingType == VARIABLE_LENGTH)
 	{
-		bytesRead = readVarLenInteger(intReaderState->streamPointer, intReaderState->streamLength,
-				&intReaderState->data);
+		bytesRead = readVarLenInteger(intReaderState->stream, &intReaderState->data);
 		if (bytesRead <= 0)
 		{
 			/* there have to be bytes left on the stream */
@@ -360,8 +316,6 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 			return -1;
 		}
 		*result = intReaderState->data;
-		intReaderState->streamPointer += bytesRead;
-		intReaderState->streamLength -= bytesRead;
 	}
 	else
 	{
@@ -388,28 +342,28 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 
 static int readFloat(StreamReader* fpState, float *data)
 {
-	if (fpState->streamLength < 4)
+	int floatLength = sizeof(float);
+	char* floatBytes = CompressedFileStream_read(fpState->stream, &floatLength);
+	if (floatBytes == NULL || floatLength != sizeof(float))
 	{
-		/* not enough byte in the stream */
-		return -1;
+		return 1;
 	}
-	memcpy(data, fpState->streamPointer, 4);
+	memcpy(data, floatBytes, floatLength);
 	fpState->floatData = *data;
-	fpState->streamPointer += 4;
 
 	return 0;
 }
 
 static int readDouble(StreamReader* fpState, double *data)
 {
-	if (fpState->streamLength < 8)
+	int doubleLength = sizeof(double);
+	char* doubleBytes = CompressedFileStream_read(fpState->stream, &doubleLength);
+	if (doubleBytes == NULL || doubleLength != sizeof(double))
 	{
-		/* not enough byte in the stream */
-		return -1;
+		return 1;
 	}
-	memcpy(data, fpState->streamPointer, 8);
-	fpState->doubleData = *data;
-	fpState->streamPointer += 8;
+	memcpy(data, doubleBytes, doubleLength);
+	fpState->floatData = *data;
 
 	return 0;
 }
@@ -420,19 +374,14 @@ static int readDouble(StreamReader* fpState, double *data)
 static int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length)
 {
 	int bytePosition = 0;
-
-	if (length > binaryReaderState->streamLength)
+	int requiredLength = length;
+	char* bytes = CompressedFileStream_read(binaryReaderState->stream, &length);
+	if (bytes == NULL || requiredLength != length)
 	{
-		/* stream doesn't have enough bytes */
-		fprintf(stderr, "Stream doesn't have enough bytes!\n");
-		return -1;
+		return 1;
 	}
 
-	for (bytePosition = 0; bytePosition < length; bytePosition++)
-	{
-		data[bytePosition] = *binaryReaderState->streamPointer++;
-	}
-	binaryReaderState->streamLength -= length;
+	memcpy(data, bytes, length);
 
 	return 0;
 }

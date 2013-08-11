@@ -18,14 +18,6 @@
 
 typedef struct
 {
-	CompressionKind compressionKind;
-	long compressionBlockSize;
-} CompressionParameters;
-
-extern CompressionParameters compressionParameters;
-
-typedef struct
-{
 	uint8_t *buffer;
 	int offset;
 	int length;

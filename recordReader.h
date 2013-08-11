@@ -10,6 +10,7 @@
 
 #include <time.h>
 #include "orc_proto.pb-c.h"
+#include "InputStream.h"
 
 #define DATA 			0
 #define LENGTH 			1
@@ -56,15 +57,8 @@ typedef struct
 
 typedef struct
 {
-	/* pointer to the next byte to read */
-	/* TODO: Is fixed size buffer better ? */
-	uint8_t *streamPointer;
-	uint8_t *stream;
-
-//	uint8_t stream[STREAM_BUFFER_SIZE];
-
-	/* no of bytes left in the stream */
-	long streamLength;
+	/* stream to read from the file */
+	CompressedFileStream* stream;
 
 	/* type of the encoding */
 	EncodingType currentEncodingType;
@@ -129,7 +123,8 @@ void freeStructReader(StructReader* reader);
 void freePrimitiveReader(PrimitiveReader* reader);
 
 int readStruct(StructReader* reader, void* value);
-int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, uint8_t* stream, long streamLength);
+int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, char* fileName, long offset, long limit,
+		CompressionParameters* parameters);
 
 /**
  * Reads one element from the type.

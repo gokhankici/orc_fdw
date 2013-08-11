@@ -9,7 +9,14 @@
 #define INPUTSTREAM_H_
 
 #include <stdio.h>
-#include "util.h"
+
+typedef struct
+{
+	CompressionKind compressionKind;
+	long compressionBlockSize;
+} CompressionParameters;
+
+extern CompressionParameters compressionParameters;
 
 typedef struct
 {
@@ -55,11 +62,14 @@ typedef struct
 	char* uncompressedBuffer;
 	/* true if uncompressed stream is the same as compressed one */
 	char isOriginal;
+
+	/* this is for reading bytes from cross boundries */
+	char* tempBuffer;
 } CompressedFileStream;
 
 CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize, CompressionKind kind);
 int CompressedFileStream_free(CompressedFileStream*);
 char* CompressedFileStream_read(CompressedFileStream*, int *length);
-int CompressedFileStream_skip(CompressedFileStream*, int skip);
+int CompressedFileStream_readByte(CompressedFileStream* stream, char* value);
 
 #endif /* INPUTSTREAM_H_ */

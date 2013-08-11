@@ -179,7 +179,6 @@ int initStripeReader(Footer* footer, StructReader* reader)
 			for (j = 0; j < MAX_STREAM_COUNT; ++j)
 			{
 				primitiveReader->readers[j].stream = NULL;
-				primitiveReader->readers[j].streamLength = 0;
 			}
 		}
 		else
@@ -196,7 +195,6 @@ int initStripeReader(Footer* footer, StructReader* reader)
 			for (j = 0; j < MAX_STREAM_COUNT; ++j)
 			{
 				primitiveReader->readers[j].stream = NULL;
-				primitiveReader->readers[j].streamLength = 0;
 			}
 		}
 	}

@@ -60,6 +60,7 @@ FileStream* FileStream_init(char* filePath, long offset, long limit, int bufferS
 int FileStream_free(FileStream* fileStream)
 {
 	int result = 0;
+
 	if (fileStream == NULL)
 	{
 		return 1;
@@ -227,6 +228,7 @@ CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, lon
 	stream->length = 0;
 	stream->uncompressedBuffer = NULL;
 	stream->isOriginal = 0;
+	stream->tempBuffer = NULL;
 
 	return stream;
 }
@@ -237,12 +239,25 @@ int CompressedFileStream_free(CompressedFileStream* stream)
 	{
 		return 1;
 	}
+
 	if (!stream->isOriginal && stream->uncompressedBuffer != NULL)
 	{
 		free(stream->uncompressedBuffer);
 	}
-	return FileStream_free(stream->fileStream);
 
+	if (stream->tempBuffer)
+	{
+		free(stream->tempBuffer);
+	}
+
+	if (FileStream_free(stream->fileStream))
+	{
+		return 1;
+	}
+
+	free(stream);
+
+	return 0;
 }
 
 static int readCompressedStreamHeader(CompressedFileStream* stream)
@@ -354,14 +369,21 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 	return 0;
 }
 
-// TODO function not completed
 char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
 {
+	int requestedLength = *length;
 	int result = 0;
 	char* data = NULL;
 	char* newBuffer = NULL;
+	int bytesCurrentlyRead = 0;
 
-	if (stream->length == 0)
+	if (stream->compressionKind == COMPRESSION_KIND__NONE)
+	{
+		/* if there is no compression, read directly from FileStream */
+		return FileStream_read(stream->fileStream, length);
+	}
+
+	if (stream->length == 0 || stream->position == stream->length)
 	{
 		result = readCompressedStreamHeader(stream);
 		if (result)
@@ -371,23 +393,58 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
 		}
 	}
 
-	if (stream->position + *length < stream->length)
+	if (stream->position + requestedLength < stream->length)
 	{
 		data = stream->uncompressedBuffer + stream->position;
-		stream->position += *length;
-		return data;
+		stream->position += requestedLength;
 	}
 	else
 	{
-		/* increment the buffer size and try to re-read block */
-		newBuffer = malloc(stream->bufferSize + stream->position);
+		if (newBuffer)
+		{
+			free(newBuffer);
+		}
+
+		/* stash available data */
+		newBuffer = malloc(requestedLength);
+		bytesCurrentlyRead = stream->length - stream->position;
+		memcpy(newBuffer, stream->uncompressedBuffer + stream->position, bytesCurrentlyRead);
+
+		/* set the stream in order to read next compressed block */
+		stream->position = stream->length;
+
+		result = readCompressedStreamHeader(stream);
+		if (result)
+		{
+			fprintf(stderr, "Error while initializing the next block\n");
+			return NULL;
+		}
+
+		if (stream->length < requestedLength - bytesCurrentlyRead)
+		{
+			fprintf(stderr, "Couldn't get enough bytes from the next block\n");
+			return NULL;
+		}
+
+		memcpy(newBuffer + bytesCurrentlyRead, stream->uncompressedBuffer, requestedLength - bytesCurrentlyRead);
+		stream->position += requestedLength - bytesCurrentlyRead;
+
+		data = stream->tempBuffer;
 	}
 
-	return NULL;
+	return data;
 }
 
-// TODO function not completed
-int CompressedFileStream_skip(CompressedFileStream* stream, int skip)
+int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
 {
+	int readLength = 1;
+	char* readBytes = CompressedFileStream_read(stream, &readLength);
+	if (readBytes == NULL || readLength != 1)
+	{
+		return -1;
+	}
+
+	*value = *readBytes;
 	return 0;
 }
+
