@@ -134,8 +134,8 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 		doubleStatistics = statistics->doublestatistics;
 		if (doubleStatistics)
 		{
-			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum, doubleStatistics->maximum,
-					doubleStatistics->sum);
+			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum,
+					doubleStatistics->maximum, doubleStatistics->sum);
 		}
 		break;
 	case TYPE__KIND__STRING:
@@ -241,7 +241,8 @@ void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset)
 		streamLength = stream->length;
 
 		printf("Column %-2d | Stream %-2d | Offset: %ld\n", stream->column, index, offset);
-		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind), streamLength);
+		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind),
+				streamLength);
 		printf("    Encoding type: %-13s | Dict. size: %d\n", getEncodingName(columnEncoding->kind),
 				columnEncoding->has_dictionarysize ? columnEncoding->dictionarysize : 0);
 
@@ -253,8 +254,7 @@ int main(int argc, const char * argv[])
 {
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
-//	char* orcFileName = "short.orc";
-	char* orcFileName = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
+	char* orcFileName = NULL;
 	long psOffset = 0;
 	long footerSize = 0;
 	uint32_t *versionPointer = NULL;
@@ -268,6 +268,14 @@ int main(int argc, const char * argv[])
 	StripeFooter* stripeFooter;
 	int result = 0;
 
+	if (argc != 2)
+	{
+		printf("Usage: readMetadata fileName\n");
+		return 1;
+	}
+
+	orcFileName = argv[1];
+
 	result = readPostscript(orcFileName, &postScript, &psOffset);
 	if (result)
 	{
@@ -275,7 +283,6 @@ int main(int argc, const char * argv[])
 		exit(1);
 	}
 	footerSize = postScript->footerlength;
-
 
 	/* display the postscript's fields. */
 	footerSize = postScript->footerlength;

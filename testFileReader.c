@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 #include "fileReader.h"
 #include "recordReader.h"
 #include "util.h"
@@ -25,6 +27,12 @@ int printAllData(FILE* file, StructReader* structReader, int noOfRows)
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
 			reader = structReader->fields[columnNo];
+			if (!reader->required)
+			{
+				fprintf(file, "-|");
+				continue;
+			}
+
 			isNull = readField(reader, &field, &length);
 			if (isNull)
 			{
@@ -37,18 +45,31 @@ int printAllData(FILE* file, StructReader* structReader, int noOfRows)
 					listLength = length;
 					listItemKind = ((ListReader*) reader->fieldReader)->itemReader.kind;
 					fprintf(file, "[");
-					for (iterator = 0; iterator < listLength; ++iterator)
+					if (listLength > 0)
+					{
+						length = field.listItemSizes ? field.listItemSizes[0] : 0;
+						isNull = field.isItemNull[0];
+						if (isNull)
+						{
+							fprintf(file, "(NULL)");
+						}
+						else
+						{
+							printFieldValue(file, &field.list[0], listItemKind, length);
+						}
+					}
+					for (iterator = 1; iterator < listLength; ++iterator)
 					{
 						length = field.listItemSizes ? field.listItemSizes[iterator] : 0;
 						isNull = field.isItemNull[iterator];
 						if (isNull)
 						{
-							fprintf(file, "(NULL),");
+							fprintf(file, ",(NULL)");
 						}
 						else
 						{
-							printFieldValue(file, &field.list[iterator], listItemKind, length);
 							fprintf(file, ",");
+							printFieldValue(file, &field.list[iterator], listItemKind, length);
 						}
 					}
 					fprintf(file, "]|");
@@ -81,20 +102,18 @@ int main(int argc, char **argv)
 	char *outputFileName = NULL;
 	FILE* outputFile = NULL;
 
-	StructReader structReader;
+	StructReader *structReader = NULL;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
 	StripeInformation* stripe = NULL;
 	StripeFooter* stripeFooter = NULL;
-	uint8_t *stripeFooterBuffer = NULL;
 	long stripeFooterOffset = 0;
 	long psOffset = 0;
 	long footerSize = 0;
 	int result = 0;
-
-//	char orcFileName[] = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
-//	char outputFileName[] = "/tmp/test";
-//	FILE* outputFile = stdout;
+	int iterator = 0;
+	int noOfFields = 0;
+	char* selectedFields = 0;
 
 	if (argc < 2 || argc > 3)
 	{
@@ -135,7 +154,19 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	result = initStripeReader(footer, &structReader);
+	noOfFields = footer->types[0]->n_subtypes;
+	selectedFields = malloc(noOfFields);
+
+	srand(time(NULL));
+	for (iterator = 0; iterator < noOfFields; ++iterator)
+	{
+//		selectedFields[iterator] = rand() % 2;
+		selectedFields[iterator] = 1;
+	}
+
+	structReader = malloc(sizeof(StructReader));
+
+	result = initStripeReader(footer, structReader, selectedFields);
 	if (result)
 	{
 		fprintf(stderr, "Error while initializing structure reader\n");
@@ -155,7 +186,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, &structReader,
+		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, structReader,
 				orcFileName);
 		if (result)
 		{
@@ -163,16 +194,17 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = printAllData(outputFile, &structReader, stripe->numberofrows);
+		result = printAllData(outputFile, structReader, stripe->numberofrows);
 		if (result)
 		{
 			fprintf(stderr, "Error while printing values\n");
 			exit(1);
 		}
 
-		free(stripeFooterBuffer);
 		stripe_footer__free_unpacked(stripeFooter, NULL);
 	}
+
+	freeStructReader(structReader);
 
 	post_script__free_unpacked(postScript, NULL);
 	footer__free_unpacked(footer, NULL);

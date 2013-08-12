@@ -173,11 +173,11 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState)
 	return 0;
 }
 
-int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, char* fileName, long offset, long limit,
-		CompressionParameters* parameters)
+int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, char* fileName, long offset,
+		long limit, CompressionParameters* parameters)
 {
-	streamReader->stream = CompressedFileStream_init(fileName, offset, limit, parameters->compressionBlockSize,
-			parameters->compressionKind);
+	streamReader->stream = CompressedFileStream_init(fileName, offset, limit,
+			parameters->compressionBlockSize, parameters->compressionKind);
 
 	switch (streamKind)
 	{
@@ -454,7 +454,8 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 			binaryReader = &primitiveReader->readers[DICTIONARY_DATA];
 
 			/* read the dictionary */
-			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize; ++dictionaryIterator)
+			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
+					++dictionaryIterator)
 			{
 				result = readInteger(reader->kind, integerStreamReader, &wordLength);
 				primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
@@ -694,6 +695,14 @@ void freePrimitiveReader(PrimitiveReader* reader)
 	}
 }
 
+void freeListReader(ListReader* reader)
+{
+	CompressedFileStream_free(reader->lengthReader.stream);
+
+	/* only list of primitive types are supported */
+	freePrimitiveReader((PrimitiveReader*) reader->itemReader.fieldReader);
+}
+
 void freeStructReader(StructReader* structReader)
 {
 	Reader* reader = NULL;
@@ -702,9 +711,19 @@ void freeStructReader(StructReader* structReader)
 	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
 	{
 		reader = structReader->fields[iterator];
-		assert(reader->kind != TYPE__KIND__STRUCT || reader->kind != TYPE__KIND__LIST);
-		freePrimitiveReader(reader->fieldReader);
+		if (reader->required)
+		{
+			if (reader->kind == TYPE__KIND__LIST)
+			{
+				freeListReader(reader->fieldReader);
+			}
+			else
+			{
+				freePrimitiveReader(reader->fieldReader);
+			}
+		}
 		free(reader);
 	}
 	free(structReader->fields);
+	free(structReader);
 }

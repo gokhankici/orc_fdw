@@ -86,6 +86,7 @@ typedef struct
 	int columnNo;
 	StreamReader presentBitReader;
 	char hasPresentBitReader;
+	char required;
 
 	/* Actual field reader, can be struct, list, or primitive */
 	void* fieldReader;
@@ -120,6 +121,7 @@ typedef struct
 extern struct tm BASE_TIMESTAMP;
 
 void freeStructReader(StructReader* reader);
+void freeListReader(ListReader* reader);
 void freePrimitiveReader(PrimitiveReader* reader);
 
 int readStruct(StructReader* reader, void* value);

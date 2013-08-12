@@ -18,12 +18,13 @@ int readFileFooter(char* orcFileName, Footer** footer, int footerOffset, long fo
 
 int readStripeFooter(char* orcFile, StripeFooter** stripeFooter, StripeInformation* stripeInfo);
 
-int initStripeReader(Footer* footer, StructReader* reader);
+int initStripeReader(Footer* footer, StructReader* reader, char* selectedFields);
 
 /* read actual data from the file */
 
 int readDataStream(StreamReader* streamReader, Type__Kind streamKind, char* orcFile, long offset, long limit, CompressionParameters* parameters);
 
 int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, char* orcFileName);
+
 
 #endif /* FILEREADER_H_ */
