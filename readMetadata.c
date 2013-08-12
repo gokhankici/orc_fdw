@@ -138,8 +138,8 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 		doubleStatistics = statistics->doublestatistics;
 		if (doubleStatistics)
 		{
-			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum,
-					doubleStatistics->maximum, doubleStatistics->sum);
+			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum, doubleStatistics->maximum,
+					doubleStatistics->sum);
 		}
 		break;
 	case TYPE__KIND__STRING:
@@ -245,8 +245,7 @@ void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset)
 		streamLength = stream->length;
 
 		printf("Column %-2d | Stream %-2d | Offset: %ld\n", stream->column, index, offset);
-		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind),
-				streamLength);
+		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind), streamLength);
 		printf("    Encoding type: %-13s | Dict. size: %d\n", getEncodingName(columnEncoding->kind),
 				columnEncoding->has_dictionarysize ? columnEncoding->dictionarysize : 0);
 
@@ -270,7 +269,6 @@ int main(int argc, const char * argv[])
 	int noOfUserMetadataItems = 0;
 	ColumnStatistics* statistics;
 	StripeFooter* stripeFooter;
-	int result = 0;
 
 	if (argc != 2)
 	{
@@ -280,8 +278,8 @@ int main(int argc, const char * argv[])
 
 	orcFileName = (char*) argv[1];
 
-	result = readPostscript(orcFileName, &postScript, &psOffset);
-	if (result)
+	postScript = readPostscript(orcFileName, &psOffset);
+	if (postScript == NULL)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
 		exit(1);
@@ -301,8 +299,8 @@ int main(int argc, const char * argv[])
 	printf("Magic : %s\n", postScript->magic);
 
 	/* read the file footer */
-	result = readFileFooter(orcFileName, &footer, psOffset - footerSize, footerSize);
-	if (result)
+	footer = readFileFooter(orcFileName, psOffset - footerSize, footerSize);
+	if (footer == NULL)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
 		exit(1);
@@ -365,8 +363,8 @@ int main(int argc, const char * argv[])
 	for (index = 0; index < noOfStripes; ++index)
 	{
 		stripe = stripes[index];
-		result = readStripeFooter(orcFileName, &stripeFooter, stripe);
-		if (result)
+		stripeFooter = readStripeFooter(orcFileName, stripe);
+		if (stripeFooter == NULL)
 		{
 			fprintf(stderr, "Error while reading stripe footer\n");
 			return 1;

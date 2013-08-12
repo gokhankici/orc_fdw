@@ -8,23 +8,15 @@
 #include "util.h"
 
 #define isComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
-#define DIRECTORY_SIZE_GUESS 16384
 
-/* read meta-data from the file */
+PostScript* readPostscript(char* orcFileName, long* postScriptSizeOffset);
 
-int readPostscript(char* orcFileName, PostScript ** postScriptPtr, long* postScriptSizeOffset);
+Footer* readFileFooter(char* orcFileName, int footerOffset, long footerSize);
 
-int readFileFooter(char* orcFileName, Footer** footer, int footerOffset, long footerSize);
+StripeFooter* readStripeFooter(char* orcFile, StripeInformation* stripeInfo);
 
-int readStripeFooter(char* orcFile, StripeFooter** stripeFooter, StripeInformation* stripeInfo);
+int StructReader_allocate(StructReader* reader, Footer* footer, char* selectedFields);
 
-int initStripeReader(Footer* footer, StructReader* reader, char* selectedFields);
-
-/* read actual data from the file */
-
-int readDataStream(StreamReader* streamReader, Type__Kind streamKind, char* orcFile, long offset, long limit, CompressionParameters* parameters);
-
-int readStripeData(StripeFooter* stripeFooter, long dataOffset, StructReader* structReader, char* orcFileName);
-
+int StructReader_init(StructReader* structReader, char* orcFileName, long dataOffset, StripeFooter* stripeFooter);
 
 #endif /* FILEREADER_H_ */

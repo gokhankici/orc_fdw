@@ -125,7 +125,7 @@ void freeListReader(ListReader* reader);
 void freePrimitiveReader(PrimitiveReader* reader);
 
 int readStruct(StructReader* reader, void* value);
-int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, char* fileName, long offset, long limit,
+int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset, long limit,
 		CompressionParameters* parameters);
 
 /**

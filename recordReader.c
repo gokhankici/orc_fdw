@@ -8,10 +8,17 @@
 struct tm BASE_TIMESTAMP =
 { .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 3, .tm_mon = 0, .tm_year = 115 };
 
-static int parseNanos(long serialized)
+/**
+ * Decode the nano seconds stored in the file
+ *
+ * @param serializedData data stored in the file as a long
+ *
+ * @return nanoseconds in the timestamp after the seconds
+ */
+static int parseNanos(long serializedData)
 {
-	int zeros = 7 & (int) serialized;
-	int result = (int) serialized >> 3;
+	int zeros = 7 & (int) serializedData;
+	int result = (int) serializedData >> 3;
 	int iterator = 0;
 	if (zeros != 0)
 	{
@@ -24,14 +31,18 @@ static int parseNanos(long serialized)
 }
 
 /**
- * Reads the variable-length integer from the stream and puts it into data.
- * Return -1 for error or positive for no of bytes read.
+ * Read variable-length integer from the stream
+ *
+ * @param stream stream to read
+ * @param data place to read into the integer
+ *
+ * @return length of the integer after variable-length encoding
  */
-static long readVarLenInteger(CompressedFileStream* stream, uint64_t *data)
+static int readVarLenInteger(CompressedFileStream* stream, uint64_t *data)
 {
 	*data = 0;
 	int shift = 0;
-	long bytesRead = 0;
+	int bytesRead = 0;
 	char byte = 0;
 
 	if (CompressedFileStream_readByte(stream, &byte))
@@ -57,6 +68,10 @@ static long readVarLenInteger(CompressedFileStream* stream, uint64_t *data)
 
 /**
  * Initialize a boolean reader for reading.
+ *
+ * @param boolState a boolean stream reader
+ *
+ * @return 0 for success, -1 for failure
  */
 static int initBooleanReader(StreamReader* boolState)
 {
@@ -92,7 +107,11 @@ static int initBooleanReader(StreamReader* boolState)
 }
 
 /**
- * Initialize an var-length integer reader for reading.
+ * Initialize a byte reader for reading.
+ *
+ * @param byteState a boolean stream reader
+ *
+ * @return 0 for success, -1 for failure
  */
 static int initByteReader(StreamReader* byteState)
 {
@@ -131,12 +150,19 @@ static int initByteReader(StreamReader* byteState)
 }
 
 /**
- * Initialize an var-length integer reader for reading.
+ * Initialize a integer reader for reading.
+ * For short,int and long signed integers are used.
+ * For others unsigned integers are used.
+ *
+ * @param kind type of the reader, used for detecting sign
+ * @param intState an integer stream reader
+ *
+ * @return 0 for success, -1 for failure
  */
 static int initIntegerReader(Type__Kind kind, StreamReader* intState)
 {
 	char type = 0;
-	long bytesRead = 0;
+	int bytesRead = 0;
 
 	if (CompressedFileStream_readByte(intState->stream, &type))
 	{
@@ -173,11 +199,33 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState)
 	return 0;
 }
 
-int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, char* fileName, long offset,
-		long limit, CompressionParameters* parameters)
+/**
+ * Initialize a stream reader
+ *
+ * @param streamReader reader to initialize
+ * @param streamKind is the type of the field
+ * @param offset is the offset of the data stream in the file
+ * @param limit is the offset of the end of the stream
+ * @param parameters contains compression format and compression block size
+ *
+ * @return 0 for success, 1 for failure
+ */
+int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset, long limit,
+		CompressionParameters* parameters)
 {
-	streamReader->stream = CompressedFileStream_init(fileName, offset, limit,
-			parameters->compressionBlockSize, parameters->compressionKind);
+
+	if (streamReader->stream != NULL)
+	{
+		if (CompressedFileStream_free(streamReader->stream))
+		{
+			fprintf(stderr, "Error deleting previous compressed file stream\n");
+			return 1;
+		}
+		streamReader->stream = NULL;
+	}
+
+	streamReader->stream = CompressedFileStream_init(fileName, offset, limit, parameters->compressionBlockSize,
+			parameters->compressionKind);
 
 	switch (streamKind)
 	{
@@ -201,8 +249,10 @@ int initStreamReader(Type__Kind streamKind, StreamReader* streamReader, char* fi
 
 /**
  * Reads a boolean value from the stream.
- * 0,1 : false or true value
- *  -1 : error
+ *
+ * @param booleanReaderState boolean reader
+ *
+ * @return 0 for false, 1 for true, -1 for error
  */
 static char readBoolean(StreamReader* booleanReaderState)
 {
@@ -245,8 +295,12 @@ static char readBoolean(StreamReader* booleanReaderState)
 }
 
 /**
- * Reads an integer from the stream.
- * Conversion from mixed sign to actual sign isn't done.
+ * Reads a byte from the stream.
+ *
+ * @param byteReaderState byte reader
+ * @param result used to store the value
+ *
+ * @return 0 for success, -1 for failure
  */
 static int readByte(StreamReader* byteReaderState, uint8_t *result)
 {
@@ -284,12 +338,17 @@ static int readByte(StreamReader* byteReaderState, uint8_t *result)
 
 /**
  * Reads an integer from the stream.
- * Conversion from mixed sign to actual sign isn't done.
+ *
+ * @param kind to detect the sign
+ * @param intReaderState integer reader
+ * @param result used to store the value
+ *
+ * @return 0 for success, -1 for failure
  */
 static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *result)
 {
 	*result = 0;
-	long bytesRead = 0;
+	int bytesRead = 0;
 	char step = 0;
 	uint64_t data = 0;
 
@@ -340,13 +399,21 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 	return 0;
 }
 
+/**
+ * Reads a float from the stream.
+ *
+ * @param fpState float reader
+ * @param data used to store the value
+ *
+ * @return 0 for success, -1 for failure
+ */
 static int readFloat(StreamReader* fpState, float *data)
 {
 	int floatLength = sizeof(float);
 	char* floatBytes = CompressedFileStream_read(fpState->stream, &floatLength);
 	if (floatBytes == NULL || floatLength != sizeof(float))
 	{
-		return 1;
+		return -1;
 	}
 	memcpy(data, floatBytes, floatLength);
 	fpState->floatData = *data;
@@ -354,13 +421,21 @@ static int readFloat(StreamReader* fpState, float *data)
 	return 0;
 }
 
+/**
+ * Reads a double from the stream.
+ *
+ * @param fpState double reader
+ * @param data used to store the value
+ *
+ * @return 0 for success, -1 for failure
+ */
 static int readDouble(StreamReader* fpState, double *data)
 {
 	int doubleLength = sizeof(double);
 	char* doubleBytes = CompressedFileStream_read(fpState->stream, &doubleLength);
 	if (doubleBytes == NULL || doubleLength != sizeof(double))
 	{
-		return 1;
+		return -1;
 	}
 	memcpy(data, doubleBytes, doubleLength);
 	fpState->floatData = *data;
@@ -369,15 +444,22 @@ static int readDouble(StreamReader* fpState, double *data)
 }
 
 /**
- * Reads a list of bytes from the input stream.
+ * Reads an array of bytes from the input stream.
+ *
+ * @param binaryReaderState binary stream reader
+ * @param data to put the value
+ * @param length no of bytes to read
+ *
+ * @return 0 for success, -1 for error
  */
 static int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length)
 {
 	int requiredLength = length;
 	char* bytes = CompressedFileStream_read(binaryReaderState->stream, &length);
+
 	if (bytes == NULL || requiredLength != length)
 	{
-		return 1;
+		return -1;
 	}
 
 	memcpy(data, bytes, length);
@@ -385,6 +467,15 @@ static int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length
 	return 0;
 }
 
+/**
+ * Reads a primitive type from the reader
+ *
+ * @param reader
+ * @param value to store the data
+ * @param length to store the length of the data (used when necessary)
+ *
+ * @return 0 for success, -1 for failure
+ */
 static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 {
 	PrimitiveReader* primitiveReader = (PrimitiveReader*) reader->fieldReader;
@@ -404,6 +495,7 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	uint64_t nanoSeconds = 0;
 	uint64_t data64 = 0;
 	int dictionaryIterator = 0;
+	int newNanos = 0;
 	char isPresent = 0;
 	int result = 0;
 
@@ -447,6 +539,7 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	case TYPE__KIND__STRING:
 		if (primitiveReader->dictionary == NULL)
 		{
+			/* if dictionary is NULL, read the whole dictionary to the memory */
 			primitiveReader->dictionary = malloc(sizeof(char*) * primitiveReader->dictionarySize);
 			primitiveReader->wordLength = malloc(sizeof(int) * primitiveReader->dictionarySize);
 
@@ -454,8 +547,7 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 			binaryReader = &primitiveReader->readers[DICTIONARY_DATA];
 
 			/* read the dictionary */
-			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
-					++dictionaryIterator)
+			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize; ++dictionaryIterator)
 			{
 				result = readInteger(reader->kind, integerStreamReader, &wordLength);
 				primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
@@ -494,9 +586,9 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 		/* nano seconds primitiveReader */
 		nanoSecondsReader = &primitiveReader->readers[SECONDARY];
 		result |= readInteger(TYPE__KIND__INT, nanoSecondsReader, &nanoSeconds);
-		int newNanos = parseNanos((long) nanoSeconds);
-
+		newNanos = parseNanos((long) nanoSeconds);
 		millis = (mktime(&BASE_TIMESTAMP) + seconds) * 1000;
+
 		if (millis >= 0)
 		{
 			millis += newNanos / 1000000;

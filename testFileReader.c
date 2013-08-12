@@ -169,8 +169,8 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	result = readPostscript(orcFileName, &postScript, &psOffset);
-	if (result)
+	postScript = readPostscript(orcFileName, &psOffset);
+	if (postScript == NULL)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
 		exit(1);
@@ -178,8 +178,8 @@ int main(int argc, char **argv)
 	footerSize = postScript->footerlength;
 
 	/* read the file footer */
-	result = readFileFooter(orcFileName, &footer, psOffset - footerSize, footerSize);
-	if (result)
+	footer = readFileFooter(orcFileName, psOffset - footerSize, footerSize);
+	if (footer == NULL)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
 		exit(1);
@@ -205,7 +205,7 @@ int main(int argc, char **argv)
 
 	structReader = malloc(sizeof(StructReader));
 
-	result = initStripeReader(footer, structReader, selectedFields);
+	result = StructReader_allocate(structReader, footer, selectedFields);
 	if (result)
 	{
 		fprintf(stderr, "Error while initializing structure reader\n");
@@ -221,15 +221,14 @@ int main(int argc, char **argv)
 		stripe = footer->stripes[i];
 		stripeFooterOffset = stripe->offset + stripe->datalength
 				+ ((stripe->has_indexlength) ? stripe->indexlength : 0);
-		result = readStripeFooter(orcFileName, &stripeFooter, stripe);
-		if (result)
+		stripeFooter = readStripeFooter(orcFileName, stripe);
+		if (stripeFooter == NULL)
 		{
 			fprintf(stderr, "Error while reading stripe footer\n");
 			exit(1);
 		}
 
-		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, structReader,
-				orcFileName);
+		result = StructReader_init(structReader, orcFileName, stripeFooterOffset - stripe->datalength, stripeFooter);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe data\n");

@@ -120,10 +120,10 @@ void testStringReader()
 	stringReader.dictionary = NULL;
 	stringReader.dictionarySize = 2;
 
-	initStreamReader(TYPE__KIND__BOOLEAN, &reader.presentBitReader, present, (long) 2);
-	initStreamReader(TYPE__KIND__INT, &stringReader.readers[DATA], data, (long) 4);
-	initStreamReader(TYPE__KIND__INT, &stringReader.readers[LENGTH], length, (long) 3);
-	initStreamReader(TYPE__KIND__BINARY, &stringReader.readers[DICTIONARY_DATA], dictionary, (long) 12);
+	StreamReader_init(TYPE__KIND__BOOLEAN, &reader.presentBitReader, present, (long) 2);
+	StreamReader_init(TYPE__KIND__INT, &stringReader.readers[DATA], data, (long) 4);
+	StreamReader_init(TYPE__KIND__INT, &stringReader.readers[LENGTH], length, (long) 3);
+	StreamReader_init(TYPE__KIND__BINARY, &stringReader.readers[DICTIONARY_DATA], dictionary, (long) 12);
 
 	for (iterator = 0; iterator < noOfWords; ++iterator)
 	{
