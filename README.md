@@ -13,7 +13,7 @@ Reads ORC formatted files. 'testFileReader' program in the 'out' folder can be u
     make
     sudo make install
     ```
-2. Run `init.sh` and then `make` in orcfdw folder.
+2. Run `sh init.sh` and then `make` in orcfdw folder.
 
 ## Usage
 
