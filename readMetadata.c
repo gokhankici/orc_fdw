@@ -6,6 +6,10 @@
 #include "recordReader.h"
 #include "util.h"
 
+/* TODO remove these two later */
+long totalBytesRead = 0;
+long totalUncompressedBytes = 0;
+
 char* getTypeKindName(Type__Kind kind)
 {
 	if (kind == TYPE__KIND__BOOLEAN)
@@ -274,7 +278,7 @@ int main(int argc, const char * argv[])
 		return 1;
 	}
 
-	orcFileName = argv[1];
+	orcFileName = (char*) argv[1];
 
 	result = readPostscript(orcFileName, &postScript, &psOffset);
 	if (result)

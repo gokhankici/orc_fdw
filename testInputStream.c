@@ -11,6 +11,10 @@
 #define BUFFER_SIZE 262144
 #define TEST_FILE_SIZE 171535926
 
+/* TODO remove these two later */
+long totalBytesRead = 0;
+long totalUncompressedBytes = 0;
+
 int compareBytes(char* array1, char* array2, int length)
 {
 	int i = 0;

@@ -11,6 +11,9 @@
 #include "util.h"
 #include "snappy-c/snappy.h"
 
+extern long totalBytesRead;
+extern long totalUncompressedBytes;
+
 /**
  * Initialize a FileStream, from starting at an offset and with a limit.
  * Buffer size gives the maximum size that can be read at a time.
@@ -107,7 +110,7 @@ static int FileStream_fill(FileStream* fileStream)
 	}
 
 	bytesRead =
-	min(fileStream->limit - (fileStream->offset + fileStream->length), fileStream->bufferSize - fileStream->length);
+			min(fileStream->limit - (fileStream->offset + fileStream->length), fileStream->bufferSize - fileStream->length);
 
 	if (bytesRead < 0)
 	{
@@ -126,6 +129,8 @@ static int FileStream_fill(FileStream* fileStream)
 		fprintf(stderr, "Error while reading file\n");
 		return -1;
 	}
+
+	totalBytesRead += bytesRead;
 
 	fileStream->length += bytesRead;
 
@@ -183,7 +188,8 @@ int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLengt
 	{
 		newBuffer = malloc(remainingLength);
 		fileStream->bufferSize = remainingLength;
-		memcpy(newBuffer, fileStream->buffer + fileStream->position, fileStream->length - fileStream->position);
+		memcpy(newBuffer, fileStream->buffer + fileStream->position,
+				fileStream->length - fileStream->position);
 		fileStream->offset += fileStream->position;
 		fileStream->length -= fileStream->position;
 		fileStream->position = 0;
@@ -359,7 +365,8 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 		switch (stream->compressionKind)
 		{
 		case COMPRESSION_KIND__ZLIB:
-			result = inflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->uncompressedBuffer, &stream->length);
+			result = inflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->uncompressedBuffer,
+					&stream->length);
 			if (result != Z_OK)
 			{
 				fprintf(stderr, "Error while decompressing with zlib inflator\n");
@@ -367,13 +374,6 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 			}
 			break;
 		case COMPRESSION_KIND__SNAPPY:
-			result = snappy_uncompress((const char*) compressed, (size_t) chunkLength,
-					(char*) stream->uncompressedBuffer);
-			if (result)
-			{
-				fprintf(stderr, "Error while uncompressing with snappy. Error code %d\n", result);
-				return 1;
-			}
 			result = snappy_uncompressed_length((const char*) compressed, (size_t) chunkLength,
 					&snappyUncompressedSize);
 
@@ -390,11 +390,20 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 						stream->bufferSize);
 				return 1;
 			}
+
+			result = snappy_uncompress((const char*) compressed, (size_t) chunkLength,
+					(char*) stream->uncompressedBuffer);
+			if (result)
+			{
+				fprintf(stderr, "Error while uncompressing with snappy. Error code %d\n", result);
+				return 1;
+			}
 			break;
 		default:
 			/* compression kind not supported */
 			return 1;
 		}
+		totalUncompressedBytes += stream->length;
 	}
 	return 0;
 }
@@ -456,7 +465,8 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
 			return NULL;
 		}
 
-		memcpy(newBuffer + bytesCurrentlyRead, stream->uncompressedBuffer, requestedLength - bytesCurrentlyRead);
+		memcpy(newBuffer + bytesCurrentlyRead, stream->uncompressedBuffer,
+				requestedLength - bytesCurrentlyRead);
 		stream->position += requestedLength - bytesCurrentlyRead;
 
 		data = stream->tempBuffer;
@@ -537,7 +547,8 @@ int CompressedFileStream_readRemaining(CompressedFileStream* stream, char** data
 			else
 			{
 				/* there is enough space so copy directly */
-				memcpy(newBuffer, stream->uncompressedBuffer + stream->position, stream->length - stream->position);
+				memcpy(newBuffer, stream->uncompressedBuffer + stream->position,
+						stream->length - stream->position);
 				newBufferPosition += stream->length - stream->position;
 			}
 		}

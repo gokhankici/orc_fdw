@@ -1,10 +1,38 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
 #include "fileReader.h"
 #include "recordReader.h"
 #include "util.h"
+int readAllData(StructReader* structReader, int noOfRows)
+{
+	Reader* reader = NULL;
+	int rowNo = 0;
+	int columnNo = 0;
+	Field field;
+	int length = 0;
+	int isNull = 0;
 
+	for (rowNo = 0; rowNo < noOfRows; rowNo++)
+	{
+		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
+		{
+			reader = structReader->fields[columnNo];
+			if (!reader->required)
+			{
+				continue;
+			}
+
+			isNull = readField(reader, &field, &length);
+			if (isNull == 0 && reader->kind == TYPE__KIND__LIST)
+			{
+				free(field.list);
+				free(field.isItemNull);
+				free(field.listItemSizes);
+			}
+		}
+	}
+
+	return 0;
+}
 int printAllData(FILE* file, StructReader* structReader, int noOfRows)
 {
 	Reader* reader = NULL;
@@ -95,6 +123,9 @@ int printAllData(FILE* file, StructReader* structReader, int noOfRows)
 	return 0;
 }
 
+long totalBytesRead;
+long totalUncompressedBytes;
+
 int main(int argc, char **argv)
 {
 
@@ -157,10 +188,18 @@ int main(int argc, char **argv)
 	noOfFields = footer->types[0]->n_subtypes;
 	selectedFields = malloc(noOfFields);
 
-	srand(time(NULL));
 	for (iterator = 0; iterator < noOfFields; ++iterator)
 	{
-//		selectedFields[iterator] = rand() % 2;
+//		if (iterator == 4 || iterator == 5 || iterator == 6 || iterator == 10)
+//		{
+//
+//			selectedFields[iterator] = 1;
+//		}
+//		else
+//		{
+//			selectedFields[iterator] = 0;
+//		}
+
 		selectedFields[iterator] = 1;
 	}
 
@@ -172,6 +211,9 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Error while initializing structure reader\n");
 		exit(1);
 	}
+
+	totalBytesRead = 0;
+	totalUncompressedBytes = 0;
 
 	int i = 0;
 	for (i = 0; i < footer->n_stripes; i++)
@@ -195,6 +237,7 @@ int main(int argc, char **argv)
 		}
 
 		result = printAllData(outputFile, structReader, stripe->numberofrows);
+//		result = readAllData(structReader, stripe->numberofrows);
 		if (result)
 		{
 			fprintf(stderr, "Error while printing values\n");
@@ -205,6 +248,11 @@ int main(int argc, char **argv)
 	}
 
 	freeStructReader(structReader);
+	if (outputFile != stdout)
+		fclose(outputFile);
+
+	printf("Total bytes read from the file: %ld\n", totalBytesRead);
+	printf("Uncompressed size of the read data: %ld\n", totalUncompressedBytes);
 
 	post_script__free_unpacked(postScript, NULL);
 	footer__free_unpacked(footer, NULL);
