@@ -359,7 +359,7 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 		switch (stream->compressionKind)
 		{
 		case COMPRESSION_KIND__ZLIB:
-			result = inf((uint8_t*) compressed, chunkLength, (uint8_t*) stream->uncompressedBuffer, &stream->length);
+			result = inflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->uncompressedBuffer, &stream->length);
 			if (result != Z_OK)
 			{
 				fprintf(stderr, "Error while decompressing with zlib inflator\n");

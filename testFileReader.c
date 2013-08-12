@@ -24,9 +24,6 @@ int printAllData(FILE* file, StructReader* structReader, int noOfRows)
 	{
 		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
 		{
-			if(columnNo == 15){
-				printf("here");
-			}
 			reader = structReader->fields[columnNo];
 			isNull = readField(reader, &field, &length);
 			if (isNull)
@@ -79,11 +76,10 @@ int printAllData(FILE* file, StructReader* structReader, int noOfRows)
 
 int main(int argc, char **argv)
 {
-	char orcFileName[] = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
-//	char orcFileName[] = "output_gzip.orc";
-	char outputFileName[] = "/tmp/test";
-	FILE* outputFile = fopen(outputFileName, "w");
-//	FILE* outputFile = stdout;
+
+	char *orcFileName = NULL;
+	char *outputFileName = NULL;
+	FILE* outputFile = NULL;
 
 	StructReader structReader;
 	PostScript *postScript = NULL;
@@ -95,6 +91,28 @@ int main(int argc, char **argv)
 	long psOffset = 0;
 	long footerSize = 0;
 	int result = 0;
+
+//	char orcFileName[] = "/home/gokhan/orc-files/output_gzip_lcomment.orc";
+//	char outputFileName[] = "/tmp/test";
+//	FILE* outputFile = stdout;
+
+	if (argc < 2 || argc > 3)
+	{
+		printf("usage: testFileReader inputFile [outputFile]\n");
+		return 1;
+	}
+	orcFileName = argv[1];
+
+	if (argc == 2)
+	{
+		outputFile = stdout;
+	}
+	else
+	{
+		outputFileName = argv[2];
+		outputFile = fopen(outputFileName, "w");
+	}
+
 	if (outputFile == NULL)
 	{
 		fprintf(stderr, "Cannot open file to write\n");
@@ -137,7 +155,8 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, &structReader, orcFileName);
+		result = readStripeData(stripeFooter, stripeFooterOffset - stripe->datalength, &structReader,
+				orcFileName);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe data\n");

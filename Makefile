@@ -12,7 +12,7 @@ TESTINPUTSTREAM_OBJECTS	= InputStream.o testInputStream.o $(SNAPPY_FOLDER)/snapp
 EXECUTABLES				= readMetadata testFileReader testInputStream
 
 
-all:			$(EXECUTABLES) snappy_c
+all:			snappy_c $(EXECUTABLES) 
 				mv $(EXECUTABLES) $(EXEC_FOLDER)/
 
 snappy_c:
