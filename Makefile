@@ -2,21 +2,25 @@ CC			 = gcc
 LIBS		+= `pkg-config --libs libprotobuf-c zlib`
 INCLUDES	+= `pkg-config --cflags libprotobuf-c zlib`
 CFLAGS		 = -Wall
-SNAPPY_FOLDER = snappy-c
 
-EXEC_FOLDER				= out
-READMETADATA_OBJECTS	= $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o orc_proto.pb-c.o readMetadata.o InputStream.o
-#TEST_OBJECTS			= test.o recordReader.o testFileReader.o 
-TESTFILEREADER_OBJECTS	= testFileReader.o recordReader.o orc_proto.pb-c.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o InputStream.o 
+SNAPPY_FOLDER	= snappy-c
+EXEC_FOLDER		= out
+
+READMETADATA_OBJECTS	= orc_proto.pb-c.o $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o readMetadata.o InputStream.o
+TESTFILEREADER_OBJECTS	= orc_proto.pb-c.o testFileReader.o recordReader.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o InputStream.o 
 TESTINPUTSTREAM_OBJECTS	= InputStream.o testInputStream.o $(SNAPPY_FOLDER)/snappy.o util.o
 EXECUTABLES				= readMetadata testFileReader testInputStream
 
-
-all:			snappy_c $(EXECUTABLES) 
-				mv $(EXECUTABLES) $(EXEC_FOLDER)/
+all:			snappy_c orc_proto $(EXECUTABLES) 
+				mv $(EXECUTABLES) $(EXEC_FOLDER)
 
 snappy_c:
 				cd snappy-c && make
+
+orc_proto: 		orc_proto.pb-c.c
+
+orc_proto.pb-c.c:	
+				protoc-c --c_out=. orc_proto.proto
 
 .SUFFIXES: 		.c .o
 
@@ -26,11 +30,9 @@ snappy_c:
 .o:		
 				$(CC) -g $(CFLAGS) $^ -o $@ $(LIBS)
 
-readMetadata:	$(READMETADATA_OBJECTS)
+readMetadata:		$(READMETADATA_OBJECTS)
 
-#test:			$(TEST_OBJECTS)
-
-testFileReader:	$(TESTFILEREADER_OBJECTS)
+testFileReader:		$(TESTFILEREADER_OBJECTS)
 
 testInputStream:	$(TESTINPUTSTREAM_OBJECTS)
 
