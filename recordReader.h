@@ -87,6 +87,8 @@ typedef struct
 	Type__Kind kind;
 	int columnNo;
 	StreamReader presentBitReader;
+	/* Length reader for list & map complex types */
+	StreamReader lengthReader;
 	char hasPresentBitReader;
 	char required;
 
@@ -110,7 +112,6 @@ typedef struct
 
 typedef struct
 {
-	StreamReader lengthReader;
 	FieldReader itemReader;
 } ListFieldReader;
 
@@ -124,7 +125,7 @@ extern struct tm BASE_TIMESTAMP;
 
 void StructFieldReaderFree(StructFieldReader* reader);
 void ListFieldReaderFree(ListFieldReader* reader);
-void PrimitiveReaderFree(PrimitiveFieldReader* reader);
+void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
 
 int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
 		long limit, CompressionParameters* parameters);

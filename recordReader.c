@@ -224,7 +224,7 @@ int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fi
 		if (CompressedFileStreamFree(streamReader->stream))
 		{
 			fprintf(stderr, "Error deleting previous compressed file stream\n");
-			return 1;
+			return -1;
 		}
 		streamReader->stream = NULL;
 	}
@@ -647,7 +647,7 @@ static int readListElement(FieldReader* fieldReader, Field* field, int* length)
 		return -1;
 	}
 
-	result = readInteger(fieldReader->kind, &listReader->lengthReader, &listSize);
+	result = readInteger(fieldReader->kind, &fieldReader->lengthReader, &listSize);
 	if (result)
 	{
 		/* error while reading the list size */
@@ -778,12 +778,14 @@ int GetStreamCount(Type__Kind type)
 	case TYPE__KIND__LIST:
 		/* for length */
 		return 1;
+	case TYPE__KIND__STRUCT:
+		return 0;
 	default:
 		return -1;
 	}
 }
 
-void PrimitiveReaderFree(PrimitiveFieldReader* reader)
+void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 {
 	int iterator = 0;
 	if (reader->dictionary)
@@ -810,10 +812,8 @@ void PrimitiveReaderFree(PrimitiveFieldReader* reader)
 
 void ListFieldReaderFree(ListFieldReader* reader)
 {
-	CompressedFileStreamFree(reader->lengthReader.stream);
-
 	/* only list of primitive types are supported */
-	PrimitiveReaderFree((PrimitiveFieldReader*) reader->itemReader.fieldReader);
+	PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->itemReader.fieldReader);
 }
 
 void StructFieldReaderFree(StructFieldReader* structReader)
@@ -828,11 +828,11 @@ void StructFieldReaderFree(StructFieldReader* structReader)
 		{
 			if (fieldReader->kind == TYPE__KIND__LIST)
 			{
-				ListFieldReaderFree(fieldReader->fieldReader);
+
 			}
 			else
 			{
-				PrimitiveReaderFree(fieldReader->fieldReader);
+				PrimitiveFieldReaderFree(fieldReader->fieldReader);
 			}
 		}
 		free(fieldReader);

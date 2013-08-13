@@ -15,6 +15,7 @@ StripeFooter* StripeFooterInit(char* orcFile, StripeInformation* stripeInfo, Com
 
 int StructReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields);
 
-int StructReaderInit(StructFieldReader* structReader, char* orcFileName, long dataOffset, StripeFooter* stripeFooter, CompressionParameters* parameters);
+int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset, int* streamNo,
+		StripeFooter* stripeFooter, CompressionParameters* parameters);
 
 #endif /* FILEREADER_H_ */
