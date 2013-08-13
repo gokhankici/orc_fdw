@@ -128,7 +128,7 @@ static int FileBufferFill(FileBuffer* fileStream)
 	}
 
 	bytesRead =
-			min(fileStream->limit - (fileStream->offset + fileStream->length), fileStream->bufferSize - fileStream->length);
+	min(fileStream->limit - (fileStream->offset + fileStream->length), fileStream->bufferSize - fileStream->length);
 
 	if (bytesRead < 0)
 	{
@@ -264,8 +264,7 @@ static int FileBufferReadRemaining(FileBuffer* fileStream, char** data, int* dat
 		fileStream->bufferSize = remainingLength;
 
 		/* copy the unread data in the buffer to new buffer */
-		memcpy(newBuffer, fileStream->buffer + fileStream->position,
-				fileStream->length - fileStream->position);
+		memcpy(newBuffer, fileStream->buffer + fileStream->position, fileStream->length - fileStream->position);
 
 		/* update offsets and positions after copy */
 		fileStream->offset += fileStream->position;
@@ -311,8 +310,7 @@ static long FileBufferBytesLeft(FileBuffer* fileStream)
  *
  * @return NULL for failure, non-NULL for success
  */
-FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize,
-		CompressionKind kind)
+FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize, CompressionKind kind)
 {
 	FileStream *stream = malloc(sizeof(FileStream));
 
@@ -584,8 +582,7 @@ char* FileStreamRead(FileStream* stream, int *length)
 			return NULL;
 		}
 
-		memcpy(newBuffer + bytesCurrentlyRead, stream->uncompressedBuffer,
-				requestedLength - bytesCurrentlyRead);
+		memcpy(newBuffer + bytesCurrentlyRead, stream->uncompressedBuffer, requestedLength - bytesCurrentlyRead);
 		stream->position += requestedLength - bytesCurrentlyRead;
 
 		stream->tempBuffer = newBuffer;
@@ -626,7 +623,8 @@ int FileStreamReadByte(FileStream* stream, char* value)
 
 	if (stream->position < stream->length)
 	{
-		*value = stream->uncompressedBuffer[stream->position++];
+		*value = stream->uncompressedBuffer[stream->position];
+		stream->position++;
 		return 0;
 	}
 	else
@@ -703,8 +701,7 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 			else
 			{
 				/* there is enough space so copy directly */
-				memcpy(newBuffer, stream->uncompressedBuffer + stream->position,
-						stream->length - stream->position);
+				memcpy(newBuffer, stream->uncompressedBuffer + stream->position, stream->length - stream->position);
 				newBufferPosition += stream->length - stream->position;
 			}
 		}

@@ -240,8 +240,8 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-//		result = printAllData(outputFile, fieldReader, stripe->numberofrows);
-		result = readAllData(fieldReader, stripe->numberofrows);
+		result = printAllData(outputFile, fieldReader, stripe->numberofrows);
+//		result = readAllData(fieldReader, stripe->numberofrows);
 		if (result)
 		{
 			fprintf(stderr, "Error while printing values\n");
