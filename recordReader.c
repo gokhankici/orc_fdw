@@ -210,8 +210,8 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState)
  *
  * @return 0 for success, 1 for failure
  */
-int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset, long limit,
-		CompressionParameters* parameters)
+int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
+		long limit, CompressionParameters* parameters)
 {
 
 	if (streamReader->stream != NULL)
@@ -224,8 +224,8 @@ int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* f
 		streamReader->stream = NULL;
 	}
 
-	streamReader->stream = CompressedFileStream_init(fileName, offset, limit, parameters->compressionBlockSize,
-			parameters->compressionKind);
+	streamReader->stream = CompressedFileStream_init(fileName, offset, limit,
+			parameters->compressionBlockSize, parameters->compressionKind);
 
 	switch (streamKind)
 	{
@@ -547,12 +547,19 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 			binaryReader = &primitiveReader->readers[DICTIONARY_DATA];
 
 			/* read the dictionary */
-			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize; ++dictionaryIterator)
+			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
+					++dictionaryIterator)
 			{
 				result = readInteger(reader->kind, integerStreamReader, &wordLength);
+
+				if (result < 0)
+				{
+					return -1;
+				}
+
 				primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
 				primitiveReader->dictionary[dictionaryIterator] = malloc(wordLength + 1);
-				result |= readBinary(binaryReader, (uint8_t*) primitiveReader->dictionary[dictionaryIterator],
+				result = readBinary(binaryReader, (uint8_t*) primitiveReader->dictionary[dictionaryIterator],
 						(int) wordLength);
 				primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
 
@@ -668,11 +675,12 @@ int readField(Reader* reader, Field* field, int* length)
 	field->listItemSizes = NULL;
 	field->isItemNull = NULL;
 
-	switch (reader->kind)
+	if (reader->kind == TYPE__KIND__LIST)
 	{
-	case TYPE__KIND__LIST:
 		return readListElement(reader, field, length);
-	default:
+	}
+	else
+	{
 		return readPrimitiveType(reader, &field->value, length);
 	}
 }

@@ -128,7 +128,7 @@ static int FileStream_fill(FileStream* fileStream)
 	}
 
 	bytesRead =
-	min(fileStream->limit - (fileStream->offset + fileStream->length), fileStream->bufferSize - fileStream->length);
+			min(fileStream->limit - (fileStream->offset + fileStream->length), fileStream->bufferSize - fileStream->length);
 
 	if (bytesRead < 0)
 	{
@@ -242,7 +242,8 @@ int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLengt
 		fileStream->bufferSize = remainingLength;
 
 		/* copy the unread data in the buffer to new buffer */
-		memcpy(newBuffer, fileStream->buffer + fileStream->position, fileStream->length - fileStream->position);
+		memcpy(newBuffer, fileStream->buffer + fileStream->position,
+				fileStream->length - fileStream->position);
 
 		/* update offsets and positions after copy */
 		fileStream->offset += fileStream->position;
@@ -583,9 +584,11 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
 			return NULL;
 		}
 
-		memcpy(newBuffer + bytesCurrentlyRead, stream->uncompressedBuffer, requestedLength - bytesCurrentlyRead);
+		memcpy(newBuffer + bytesCurrentlyRead, stream->uncompressedBuffer,
+				requestedLength - bytesCurrentlyRead);
 		stream->position += requestedLength - bytesCurrentlyRead;
 
+		stream->tempBuffer = newBuffer;
 		data = stream->tempBuffer;
 	}
 
@@ -683,7 +686,8 @@ int CompressedFileStream_readRemaining(CompressedFileStream* stream, char** data
 			else
 			{
 				/* there is enough space so copy directly */
-				memcpy(newBuffer, stream->uncompressedBuffer + stream->position, stream->length - stream->position);
+				memcpy(newBuffer, stream->uncompressedBuffer + stream->position,
+						stream->length - stream->position);
 				newBufferPosition += stream->length - stream->position;
 			}
 		}

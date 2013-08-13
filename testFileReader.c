@@ -228,7 +228,8 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = StructReader_init(structReader, orcFileName, stripeFooterOffset - stripe->datalength, stripeFooter);
+		result = StructReader_init(structReader, orcFileName, stripeFooterOffset - stripe->datalength,
+				stripeFooter);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe data\n");

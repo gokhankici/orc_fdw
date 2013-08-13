@@ -1,7 +1,7 @@
 CC			 = gcc
 LIBS		+= `pkg-config --libs libprotobuf-c zlib`
 INCLUDES	+= `pkg-config --cflags libprotobuf-c zlib`
-CFLAGS		 = -Wall
+CFLAGS		 = -Wall -g
 
 SNAPPY_FOLDER	= snappy-c
 EXEC_FOLDER		= out
@@ -25,10 +25,10 @@ orc_proto.pb-c.c:
 .SUFFIXES: 		.c .o
 
 .c.o:	
-				$(CC) -g $(CFLAGS) $(INCLUDES) -c $<
+				$(CC) $(CFLAGS) $(INCLUDES) -c $<
 
 .o:		
-				$(CC) -g $(CFLAGS) $^ -o $@ $(LIBS)
+				$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
 readMetadata:		$(READMETADATA_OBJECTS)
 
