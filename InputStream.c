@@ -192,16 +192,7 @@ char* FileStream_read(FileStream* fileStream, int *length)
 			return NULL;
 		}
 
-		if (*length > /**
-		 * Initialize a FileStream.
-		 *
-		 * @param filePath file to read
-		 * @param offset starting position in the file
-		 * @param limit end of the stream in the file
-		 * @param bufferSize the maximum size that can be read at a time.
-		 *
-		 * @return NULL for failure, non-NULL for success
-		 */fileStream->length - fileStream->position)
+		if (*length > fileStream->length - fileStream->position)
 		{
 			/* cannot read that many bytes from the file */
 			*length = fileStream->length - fileStream->position;
@@ -212,6 +203,37 @@ char* FileStream_read(FileStream* fileStream, int *length)
 	fileStream->position += *length;
 
 	return data;
+}
+
+/**
+ * Reads one byte from the file
+ *
+ * @param fileStream file stream to read
+ * @param value used to store the byte
+ *
+ * @return 0 for success, -1 for failure
+ */
+int FileStream_readByte(FileStream* fileStream, char *value)
+{
+	int result = 0;
+
+	if (fileStream->position >= fileStream->length)
+	{
+		result = FileStream_fill(fileStream);
+		if (result < 0)
+		{
+			return -1;
+		}
+
+		if (fileStream->position >= fileStream->length)
+		{
+			return -1;
+		}
+	}
+
+	*value = fileStream->buffer[fileStream->position++];
+
+	return 0;
 }
 
 /**
@@ -605,18 +627,50 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
  */
 int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
 {
-	int readLength = 1;
-	char* readBytes = CompressedFileStream_read(stream, &readLength);
+	int result = 0;
 
-	if (readBytes == NULL || readLength != 1)
+	if (stream->compressionKind == COMPRESSION_KIND__NONE)
+	{
+		/* if there is no compression, read directly from FileStream */
+		return FileStream_readByte(stream->fileStream, value);
+	}
+
+	if (stream->length == 0 || stream->position == stream->length)
+	{
+		result = readCompressedStreamHeader(stream);
+
+		if (result)
+		{
+			fprintf(stderr, "Error reading compressed stream header\n");
+			return -1;
+		}
+	}
+
+	if (stream->position < stream->length)
+	{
+		*value = stream->uncompressedBuffer[stream->position++];
+		return 0;
+	}
+	else
 	{
 		return -1;
 	}
-
-	*value = *readBytes;
-
-	return 0;
 }
+
+//int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
+//{
+//	int readLength = 1;
+//	char* readBytes = CompressedFileStream_read(stream, &readLength);
+//
+//	if (readBytes == NULL || readLength != 1)
+//	{
+//		return -1;
+//	}
+//
+//	*value = *readBytes;
+//
+//	return 0;
+//}
 
 /**
  * Read all the remaining data in the stream.

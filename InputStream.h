@@ -45,6 +45,7 @@ typedef struct
 FileStream* FileStream_init(char* filePath, long offset, long limit, int bufferSize);
 int FileStream_free(FileStream*);
 char* FileStream_read(FileStream*, int *length);
+int FileStream_readByte(FileStream* fileStream, char *value);
 int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLength);
 int FileStream_skip(FileStream*, int skip);
 long FileStream_bytesLeft(FileStream*);

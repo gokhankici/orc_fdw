@@ -236,8 +236,8 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = printAllData(outputFile, structReader, stripe->numberofrows);
-//		result = readAllData(structReader, stripe->numberofrows);
+//		result = printAllData(outputFile, structReader, stripe->numberofrows);
+		result = readAllData(structReader, stripe->numberofrows);
 		if (result)
 		{
 			fprintf(stderr, "Error while printing values\n");

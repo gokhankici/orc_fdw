@@ -517,10 +517,6 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 		value->value8 = readBoolean(booleanStreamReader);
 		result = value->value8 < 0 ? -1 : 0;
 		break;
-	case TYPE__KIND__BYTE:
-		byteStreamReader = &primitiveReader->readers[DATA];
-		result = readByte(byteStreamReader, &value->value8);
-		break;
 	case TYPE__KIND__SHORT:
 	case TYPE__KIND__INT:
 	case TYPE__KIND__LONG:
@@ -570,18 +566,64 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 			}
 		}
 
+//		if (primitiveReader->dictionary == NULL)
+//		{
+//			primitiveReader->wordLength = malloc(sizeof(int) * primitiveReader->dictionarySize);
+//
+//			integerStreamReader = &primitiveReader->readers[LENGTH];
+//			binaryReader = &primitiveReader->readers[DICTIONARY_DATA];
+//			result = CompressedFileStream_readRemaining(binaryReader->stream, &primitiveReader->dictionary,
+//					&dataLength);
+//
+//			if (result < 0)
+//			{
+//				return -1;
+//			}
+//
+//			/* read the dictionary */
+//			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
+//					++dictionaryIterator)
+//			{
+//				primitiveReader->wordLength[dictionaryIterator] = currentOffset;
+//				result = readInteger(reader->kind, integerStreamReader, &wordLength);
+//
+//				if (result < 0)
+//				{
+//					return -1;
+//				}
+//
+//				currentOffset += wordLength;
+//			}
+//
+//			if (currentOffset != dataLength)
+//			{
+//				fprintf(stderr, "Dictionary size and sum of item sizes do not match\n");
+//				return -1;
+//			}
+//		}
+
 		integerStreamReader = &primitiveReader->readers[DATA];
 		result = readInteger(reader->kind, integerStreamReader, &index);
 		value->binary = primitiveReader->dictionary[index];
+//		value->binary = primitiveReader->dictionary + primitiveReader->wordLength[index];
+		break;
+	case TYPE__KIND__BYTE:
+		byteStreamReader = &primitiveReader->readers[DATA];
+		result = readByte(byteStreamReader, &value->value8);
 		break;
 	case TYPE__KIND__BINARY:
 		integerStreamReader = &primitiveReader->readers[LENGTH];
 		binaryReader = &primitiveReader->readers[DATA];
-
 		result = readInteger(reader->kind, integerStreamReader, &wordLength);
+
+		if (result < 0)
+		{
+			return -1;
+		}
+
 		*length = (int) wordLength;
 		value->binary = malloc(wordLength);
-		readBinary(binaryReader, (uint8_t*) value->binary, (int) wordLength);
+		result = readBinary(binaryReader, (uint8_t*) value->binary, (int) wordLength);
 		break;
 	case TYPE__KIND__TIMESTAMP:
 
@@ -675,13 +717,13 @@ int readField(Reader* reader, Field* field, int* length)
 	field->listItemSizes = NULL;
 	field->isItemNull = NULL;
 
-	if (reader->kind == TYPE__KIND__LIST)
+	if (reader->kind != TYPE__KIND__LIST)
 	{
-		return readListElement(reader, field, length);
+		return readPrimitiveType(reader, &field->value, length);
 	}
 	else
 	{
-		return readPrimitiveType(reader, &field->value, length);
+		return readListElement(reader, field, length);
 	}
 }
 

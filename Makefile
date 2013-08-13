@@ -1,7 +1,7 @@
 CC			 = gcc
 LIBS		+= `pkg-config --libs libprotobuf-c zlib`
 INCLUDES	+= `pkg-config --cflags libprotobuf-c zlib`
-CFLAGS		 = -Wall -g
+CFLAGS		 = -Wall -g -pg
 
 SNAPPY_FOLDER	= snappy-c
 EXEC_FOLDER		= out
