@@ -1,7 +1,7 @@
 CC			 =	gcc
 LIBS		+= 	`pkg-config --libs libprotobuf-c zlib`
 INCLUDES	+= 	`pkg-config --cflags libprotobuf-c zlib`
-CFLAGS		 = 	-Wall -O3 -Wmissing-prototypes -Wpointer-arith \
+CFLAGS		 = 	-Wall -g -Wmissing-prototypes -Wpointer-arith \
 				-Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute \
 				-Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard
 #not added flags -g -pg

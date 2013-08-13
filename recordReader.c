@@ -8,6 +8,9 @@
 struct tm BASE_TIMESTAMP =
 { .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 3, .tm_mon = 0, .tm_year = 115 };
 
+static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
+static void StructFieldReaderFree(StructFieldReader* reader);
+
 /**
  * Decode the nano seconds stored in the file
  *
@@ -200,6 +203,24 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState)
 			fprintf(stderr, "Error while reading var-len int from stream!\n");
 			return -1;
 		}
+	}
+	return 0;
+}
+
+/**
+ * Frees up a stream reader
+ */
+int StreamReaderFree(StreamReader* streamReader)
+{
+
+	if (streamReader->stream != NULL)
+	{
+		if (CompressedFileStreamFree(streamReader->stream))
+		{
+			fprintf(stderr, "Error deleting previous compressed file stream\n");
+			return -1;
+		}
+		streamReader->stream = NULL;
 	}
 	return 0;
 }
@@ -785,7 +806,10 @@ int GetStreamCount(Type__Kind type)
 	}
 }
 
-void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
+/**
+ * static function to free up the streams of a primitive field reader
+ */
+static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 {
 	int iterator = 0;
 	if (reader->dictionary)
@@ -810,33 +834,52 @@ void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 	}
 }
 
-void ListFieldReaderFree(ListFieldReader* reader)
+/**
+ * static function to free up the fields of a structure field reader
+ */
+static void StructFieldReaderFree(StructFieldReader* structReader)
 {
-	/* only list of primitive types are supported */
-	PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->itemReader.fieldReader);
-}
-
-void StructFieldReaderFree(StructFieldReader* structReader)
-{
-	FieldReader* fieldReader = NULL;
+	FieldReader* subField = NULL;
 	int iterator = 0;
 
 	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
 	{
-		fieldReader = structReader->fields[iterator];
-		if (fieldReader->required)
+		subField = structReader->fields[iterator];
+		if (subField->required)
 		{
-			if (fieldReader->kind == TYPE__KIND__LIST)
-			{
-
-			}
-			else
-			{
-				PrimitiveFieldReaderFree(fieldReader->fieldReader);
-			}
+			FieldReaderFree(subField);
 		}
-		free(fieldReader);
+		free(subField);
 	}
 	free(structReader->fields);
 	free(structReader);
+}
+
+/**
+ * Frees up a field reader
+ *
+ * @return 0 for success, -1 for failure
+ */
+int FieldReaderFree(FieldReader* reader)
+{
+	StreamReaderFree(&reader->lengthReader);
+	StreamReaderFree(&reader->lengthReader);
+
+	switch (reader->kind)
+	{
+	case TYPE__KIND__STRUCT:
+		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
+		return 0;
+	case TYPE__KIND__LIST:
+		PrimitiveFieldReaderFree(
+				(PrimitiveFieldReader*) &((ListFieldReader*) reader->fieldReader)->itemReader);
+		return 0;
+	case TYPE__KIND__DECIMAL:
+	case TYPE__KIND__UNION:
+	case TYPE__KIND__MAP:
+		return -1;
+	default:
+		PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->fieldReader);
+		return 0;
+	}
 }

@@ -3,23 +3,25 @@
 #include "recordReader.h"
 #include "util.h"
 
-int readAllData(StructFieldReader* structReader, int noOfRows);
-int printAllData(FILE* file, StructFieldReader* structReader, int noOfRows);
+int readAllData(FieldReader* fieldReader, int noOfRows);
+int printAllData(FILE* file, FieldReader* structReader, int noOfRows);
 
-int readAllData(StructFieldReader* structReader, int noOfRows)
+int readAllData(FieldReader* fieldReader, int noOfRows)
 {
-	FieldReader* fieldReader = NULL;
+	StructFieldReader* structFieldReader = NULL;
 	int rowNo = 0;
 	int columnNo = 0;
 	Field field;
 	int length = 0;
 	int isNull = 0;
 
+	structFieldReader = (StructFieldReader*) fieldReader->fieldReader;
+
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
-		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
+		for (columnNo = 0; columnNo < structFieldReader->noOfFields; ++columnNo)
 		{
-			fieldReader = structReader->fields[columnNo];
+			fieldReader = structFieldReader->fields[columnNo];
 			if (!fieldReader->required)
 			{
 				continue;
@@ -37,9 +39,9 @@ int readAllData(StructFieldReader* structReader, int noOfRows)
 
 	return 0;
 }
-int printAllData(FILE* file, StructFieldReader* structReader, int noOfRows)
+int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 {
-	FieldReader* fieldReader = NULL;
+	StructFieldReader* structFieldReader = NULL;
 	int rowNo = 0;
 	int columnNo = 0;
 	Field field;
@@ -54,11 +56,13 @@ int printAllData(FILE* file, StructFieldReader* structReader, int noOfRows)
 		return 1;
 	}
 
+	structFieldReader = (StructFieldReader*) fieldReader->fieldReader;
+
 	for (rowNo = 0; rowNo < noOfRows; rowNo++)
 	{
-		for (columnNo = 0; columnNo < structReader->noOfFields; ++columnNo)
+		for (columnNo = 0; columnNo < structFieldReader->noOfFields; ++columnNo)
 		{
-			fieldReader = structReader->fields[columnNo];
+			fieldReader = structFieldReader->fields[columnNo];
 			if (!fieldReader->required)
 			{
 				fprintf(file, "-|");
@@ -136,13 +140,12 @@ int main(int argc, char **argv)
 	char *orcFileName = NULL;
 	char *outputFileName = NULL;
 	FILE* outputFile = NULL;
-	StructFieldReader *structReader = NULL;
+	FieldReader *fieldReader = NULL;
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
 	StripeInformation* stripe = NULL;
 	StripeFooter* stripeFooter = NULL;
 	CompressionParameters compressionParameters;
-	long stripeFooterOffset = 0;
 	long psOffset = 0;
 	long footerSize = 0;
 	int result = 0;
@@ -208,12 +211,12 @@ int main(int argc, char **argv)
 		selectedFields[iterator] = 1;
 	}
 
-	structReader = malloc(sizeof(StructFieldReader));
+	fieldReader = malloc(sizeof(FieldReader));
+	result = FieldReaderAllocate(fieldReader, footer, selectedFields);
 
-	result = StructReaderAllocate(structReader, footer, selectedFields);
 	if (result)
 	{
-		fprintf(stderr, "Error while initializing structure reader\n");
+		fprintf(stderr, "Error while initializing field reader\n");
 		exit(1);
 	}
 
@@ -223,8 +226,6 @@ int main(int argc, char **argv)
 	for (stripeIterator = 0; stripeIterator < footer->n_stripes; stripeIterator++)
 	{
 		stripe = footer->stripes[stripeIterator];
-		stripeFooterOffset = stripe->offset + stripe->datalength
-				+ ((stripe->has_indexlength) ? stripe->indexlength : 0);
 		stripeFooter = StripeFooterInit(orcFileName, stripe, &compressionParameters);
 		if (stripeFooter == NULL)
 		{
@@ -232,8 +233,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-		result = StructReaderInit(structReader, orcFileName, stripeFooterOffset - stripe->datalength,
-				stripeFooter, &compressionParameters);
+		result = FieldReaderInit(fieldReader, orcFileName, stripe, stripeFooter, &compressionParameters);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe data\n");
@@ -241,7 +241,7 @@ int main(int argc, char **argv)
 		}
 
 //		result = printAllData(outputFile, structReader, stripe->numberofrows);
-		result = readAllData(structReader, stripe->numberofrows);
+		result = readAllData(fieldReader, stripe->numberofrows);
 		if (result)
 		{
 			fprintf(stderr, "Error while printing values\n");
@@ -251,7 +251,7 @@ int main(int argc, char **argv)
 		stripe_footer__free_unpacked(stripeFooter, NULL);
 	}
 
-	StructFieldReaderFree(structReader);
+	FieldReaderFree(fieldReader);
 	if (outputFile != stdout)
 		fclose(outputFile);
 

@@ -9,13 +9,15 @@
 
 PostScript* PostScriptInit(char* orcFileName, long* postScriptSizeOffset, CompressionParameters* parameters);
 
-Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, CompressionParameters* parameters);
+Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
+		CompressionParameters* parameters);
 
-StripeFooter* StripeFooterInit(char* orcFile, StripeInformation* stripeInfo, CompressionParameters* parameters);
+StripeFooter* StripeFooterInit(char* orcFile, StripeInformation* stripeInfo,
+		CompressionParameters* parameters);
 
-int StructReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields);
+int FieldReaderAllocate(FieldReader* reader, Footer* footer, char* selectedFields);
 
-int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset, int* streamNo,
+int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformation* stripe,
 		StripeFooter* stripeFooter, CompressionParameters* parameters);
 
 #endif /* FILEREADER_H_ */

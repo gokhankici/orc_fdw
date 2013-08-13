@@ -123,10 +123,9 @@ typedef struct
 
 extern struct tm BASE_TIMESTAMP;
 
-void StructFieldReaderFree(StructFieldReader* reader);
-void ListFieldReaderFree(ListFieldReader* reader);
-void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
+int FieldReaderFree(FieldReader* reader);
 
+int StreamReaderFree(StreamReader* streamReader);
 int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
 		long limit, CompressionParameters* parameters);
 

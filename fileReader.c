@@ -5,6 +5,8 @@
 #include "inputStream.h"
 #include "util.h"
 
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields);
+
 /**
  * Reads the postscript from the orc file and returns the postscript. Stores its offset to parameter.
  *
@@ -168,6 +170,20 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 	return stripeFooter;
 }
 
+int FieldReaderAllocate(FieldReader* reader, Footer* footer, char* selectedFields)
+{
+	reader->columnNo = 0;
+	reader->hasPresentBitReader = 0;
+	reader->kind = TYPE__KIND__STRUCT;
+	reader->required = 1;
+
+	reader->presentBitReader.stream = NULL;
+	reader->lengthReader.stream = NULL;
+
+	reader->fieldReader = malloc(sizeof(StructFieldReader));
+	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, selectedFields);
+}
+
 /**
  * Allocates space for the structure reader using the file footer and the specified fields.
  *
@@ -177,7 +193,7 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
  *
  * @return 0 for success and -1 for failure
  */
-int StructReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields)
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields)
 {
 	Type** types = footer->types;
 	Type* root = footer->types[0];
@@ -265,6 +281,29 @@ int StructReaderAllocate(StructFieldReader* reader, Footer* footer, char* select
 	return 0;
 }
 
+static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset,
+		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters);
+
+int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformation* stripe,
+		StripeFooter* stripeFooter, CompressionParameters* parameters)
+{
+	long currentDataOffset = 0;
+	int streamNo = 0;
+	Stream* stream = NULL;
+
+	currentDataOffset = stripe->offset + stripe->indexlength;
+	stream = stripeFooter->streams[streamNo];
+
+	while (streamNo < stripeFooter->n_streams && stream->kind == STREAM__KIND__ROW_INDEX)
+	{
+		currentDataOffset += stream->length;
+		streamNo++;
+		stream = stripeFooter->streams[streamNo];
+	}
+
+	return _FieldReaderInit(fieldReader, orcFileName, &currentDataOffset, &streamNo, stripeFooter, parameters);
+}
+
 /**
  * Initialize the structure reader for the given stripe
  *
@@ -277,8 +316,8 @@ int StructReaderAllocate(StructFieldReader* reader, Footer* footer, char* select
  *
  * @return 0 for success and -1 for failure
  */
-int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset, int* streamNo,
-		StripeFooter* stripeFooter, CompressionParameters* parameters)
+static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset,
+		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
 	StructFieldReader *structFieldReader = NULL;
 	ListFieldReader *listFieldReader = NULL;
@@ -293,6 +332,7 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDa
 	int noOfDataStreams = 0;
 	int totalNoOfStreams = 0;
 	int dataStreamIterator = 0;
+	int dictionaryIterator = 0;
 	int result = 0;
 
 	totalNoOfStreams = stripeFooter->n_streams;
@@ -327,7 +367,6 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDa
 	{
 	case TYPE__KIND__LIST:
 		listFieldReader = fieldReader->fieldReader;
-		ListFieldReaderFree(listFieldReader);
 		hasLengthStream = GetStreamCount(fieldKind);
 
 		if (hasLengthStream)
@@ -351,7 +390,7 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDa
 			stream = stripeFooter->streams[*streamNo];
 		}
 
-		return FieldReaderInit(&listFieldReader->itemReader, orcFileName, currentDataOffset, streamNo,
+		return _FieldReaderInit(&listFieldReader->itemReader, orcFileName, currentDataOffset, streamNo,
 				stripeFooter, parameters);
 		break;
 	case TYPE__KIND__MAP:
@@ -362,7 +401,6 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDa
 		return -1;
 	case TYPE__KIND__STRUCT:
 		structFieldReader = fieldReader->fieldReader;
-		StructFieldReaderFree(structFieldReader);
 		for (fieldNo = 0; fieldNo < structFieldReader->noOfFields; fieldNo++)
 		{
 			subField = structFieldReader->fields[fieldNo];
@@ -371,7 +409,7 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDa
 				fprintf(stderr, "Nested complex types are not supported\n");
 				return -1;
 			}
-			result = FieldReaderInit(subField, orcFileName, currentDataOffset, streamNo, stripeFooter,
+			result = _FieldReaderInit(subField, orcFileName, currentDataOffset, streamNo, stripeFooter,
 					parameters);
 
 			if (result)
@@ -383,10 +421,23 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDa
 	default:
 		/* these are the supported types, unsupported types are declared above */
 		primitiveFieldReader = fieldReader->fieldReader;
-		PrimitiveFieldReaderFree(primitiveFieldReader);
 
 		if (fieldReader->kind == TYPE__KIND__STRING)
 		{
+			if (primitiveFieldReader->dictionary)
+			{
+				for (dictionaryIterator = 0; dictionaryIterator < primitiveFieldReader->dictionarySize;
+						++dictionaryIterator)
+				{
+					free(primitiveFieldReader->dictionary[dictionaryIterator]);
+				}
+				free(primitiveFieldReader->dictionary);
+				free(primitiveFieldReader->wordLength);
+
+				primitiveFieldReader->dictionary = NULL;
+				primitiveFieldReader->wordLength = NULL;
+			}
+
 			columnEncoding = stripeFooter->columns[fieldReader->columnNo];
 			primitiveFieldReader->dictionarySize = columnEncoding->dictionarysize;
 		}
