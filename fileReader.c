@@ -2,12 +2,8 @@
 #include "orc_proto.pb-c.h"
 #include "fileReader.h"
 #include "recordReader.h"
-#include "InputStream.h"
+#include "inputStream.h"
 #include "util.h"
-
-/* global compression parameters */
-CompressionParameters compressionParameters =
-{ 0 };
 
 /**
  * Reads the postscript from the orc file and returns the postscript. Stores its offset to parameter.
@@ -17,7 +13,7 @@ CompressionParameters compressionParameters =
  *
  * @return NULL for failure, non-NULL for success
  */
-PostScript* readPostscript(char* orcFileName, long* postScriptOffset)
+PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, CompressionParameters* parameters)
 {
 	PostScript* postScript = NULL;
 	FILE* orcFile = fopen(orcFileName, "r");
@@ -63,9 +59,9 @@ PostScript* readPostscript(char* orcFileName, long* postScriptOffset)
 		return NULL;
 	}
 
-	compressionParameters.compressionBlockSize =
+	parameters->compressionBlockSize =
 			postScript->has_compressionblocksize ? postScript->compressionblocksize : 0;
-	compressionParameters.compressionKind = postScript->has_compression ? postScript->compression : 0;
+	parameters->compressionKind = postScript->has_compression ? postScript->compression : 0;
 
 	fclose(orcFile);
 
@@ -81,16 +77,17 @@ PostScript* readPostscript(char* orcFileName, long* postScriptOffset)
  *
  * @return NULL for failure, non-NULL for footer
  */
-Footer* readFileFooter(char* orcFileName, int footerOffset, long footerSize)
+Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
+		CompressionParameters* parameters)
 {
 	Footer* footer = NULL;
-	CompressedFileStream* stream = NULL;
+	FileStream* stream = NULL;
 	char* uncompressedFooter = NULL;
 	int uncompressedFooterSize = 0;
 	int result = 0;
 
-	stream = CompressedFileStream_init(orcFileName, footerOffset, footerOffset + footerSize,
-			compressionParameters.compressionBlockSize, compressionParameters.compressionKind);
+	stream = CompressedFileStreamInit(orcFileName, footerOffset, footerOffset + footerSize,
+			parameters->compressionBlockSize, parameters->compressionKind);
 
 	if (stream == NULL)
 	{
@@ -98,7 +95,7 @@ Footer* readFileFooter(char* orcFileName, int footerOffset, long footerSize)
 		return NULL;
 	}
 
-	result = CompressedFileStream_readRemaining(stream, &uncompressedFooter, &uncompressedFooterSize);
+	result = CompressedFileStreamReadRemaining(stream, &uncompressedFooter, &uncompressedFooterSize);
 
 	if (result)
 	{
@@ -115,7 +112,7 @@ Footer* readFileFooter(char* orcFileName, int footerOffset, long footerSize)
 		return NULL;
 	}
 
-	CompressedFileStream_free(stream);
+	CompressedFileStreamFree(stream);
 
 	return footer;
 }
@@ -128,10 +125,11 @@ Footer* readFileFooter(char* orcFileName, int footerOffset, long footerSize)
  *
  * @return NULL for failure, non-NULL for stripe footer
  */
-StripeFooter* readStripeFooter(char* orcFileName, StripeInformation* stripeInfo)
+StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
+		CompressionParameters* parameters)
 {
 	StripeFooter* stripeFooter = NULL;
-	CompressedFileStream *stream = NULL;
+	FileStream *stream = NULL;
 	char *stripeFooterBuffer = NULL;
 	int uncompressedStripeFooterSize = 0;
 	long stripeFooterOffset = 0;
@@ -139,8 +137,9 @@ StripeFooter* readStripeFooter(char* orcFileName, StripeInformation* stripeInfo)
 
 	stripeFooterOffset = stripeInfo->offset + (stripeInfo->has_indexlength ? stripeInfo->indexlength : 0)
 			+ stripeInfo->datalength;
-	stream = CompressedFileStream_init(orcFileName, stripeFooterOffset, stripeFooterOffset + stripeInfo->footerlength,
-			compressionParameters.compressionBlockSize, compressionParameters.compressionKind);
+	stream = CompressedFileStreamInit(orcFileName, stripeFooterOffset,
+			stripeFooterOffset + stripeInfo->footerlength, parameters->compressionBlockSize,
+			parameters->compressionKind);
 
 	if (stream == NULL)
 	{
@@ -149,7 +148,7 @@ StripeFooter* readStripeFooter(char* orcFileName, StripeInformation* stripeInfo)
 	}
 
 	stripeFooter = NULL;
-	result = CompressedFileStream_readRemaining(stream, &stripeFooterBuffer, &uncompressedStripeFooterSize);
+	result = CompressedFileStreamReadRemaining(stream, &stripeFooterBuffer, &uncompressedStripeFooterSize);
 
 	if (result)
 	{
@@ -164,7 +163,7 @@ StripeFooter* readStripeFooter(char* orcFileName, StripeInformation* stripeInfo)
 		return NULL;
 	}
 
-	CompressedFileStream_free(stream);
+	CompressedFileStreamFree(stream);
 
 	return stripeFooter;
 }
@@ -178,25 +177,25 @@ StripeFooter* readStripeFooter(char* orcFileName, StripeInformation* stripeInfo)
  *
  * @return 0 for success and -1 for failure
  */
-int StructReader_allocate(StructReader* reader, Footer* footer, char* selectedFields)
+int StructReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields)
 {
 	Type** types = footer->types;
 	Type* root = footer->types[0];
 	Type* type = NULL;
-	PrimitiveReader* primitiveReader = NULL;
-	ListReader* listReader = NULL;
-	Reader* field = NULL;
-	Reader* listItemReader = NULL;
+	PrimitiveFieldReader* primitiveReader = NULL;
+	ListFieldReader* listReader = NULL;
+	FieldReader* field = NULL;
+	FieldReader* listItemReader = NULL;
 	int readerIterator = 0;
 	int streamIterator = 0;
 
 	reader->noOfFields = root->n_subtypes;
-	reader->fields = malloc(sizeof(Reader*) * reader->noOfFields);
+	reader->fields = malloc(sizeof(FieldReader*) * reader->noOfFields);
 
 	for (readerIterator = 0; readerIterator < reader->noOfFields; ++readerIterator)
 	{
 
-		reader->fields[readerIterator] = malloc(sizeof(Reader));
+		reader->fields[readerIterator] = malloc(sizeof(FieldReader));
 		field = reader->fields[readerIterator];
 		field->columnNo = root->subtypes[readerIterator];
 		type = types[root->subtypes[readerIterator]];
@@ -216,7 +215,7 @@ int StructReader_allocate(StructReader* reader, Footer* footer, char* selectedFi
 
 		if (field->kind == TYPE__KIND__LIST)
 		{
-			field->fieldReader = malloc(sizeof(ListReader));
+			field->fieldReader = malloc(sizeof(ListFieldReader));
 
 			listReader = field->fieldReader;
 			listReader->lengthReader.stream = NULL;
@@ -228,13 +227,13 @@ int StructReader_allocate(StructReader* reader, Footer* footer, char* selectedFi
 			listItemReader->columnNo = type->subtypes[0];
 			listItemReader->kind = types[listItemReader->columnNo]->kind;
 
-			if (isComplexType(listItemReader->kind))
+			if (IsComplexType(listItemReader->kind))
 			{
 				/* only list of primitive types is supported */
 				return -1;
 			}
 
-			listItemReader->fieldReader = malloc(sizeof(PrimitiveReader));
+			listItemReader->fieldReader = malloc(sizeof(PrimitiveFieldReader));
 			primitiveReader = listItemReader->fieldReader;
 
 			for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
@@ -242,9 +241,14 @@ int StructReader_allocate(StructReader* reader, Footer* footer, char* selectedFi
 				primitiveReader->readers[streamIterator].stream = NULL;
 			}
 		}
+		else if (field->kind == TYPE__KIND__STRUCT || field->kind == TYPE__KIND__MAP)
+		{
+			/* struct and map fields are not supported */
+			return -1;
+		}
 		else
 		{
-			field->fieldReader = malloc(sizeof(PrimitiveReader));
+			field->fieldReader = malloc(sizeof(PrimitiveFieldReader));
 
 			primitiveReader = field->fieldReader;
 			primitiveReader->dictionary = NULL;
@@ -271,13 +275,14 @@ int StructReader_allocate(StructReader* reader, Footer* footer, char* selectedFi
  *
  * @return 0 for success and -1 for failure
  */
-int StructReader_init(StructReader* structReader, char* orcFileName, long dataOffset, StripeFooter* stripeFooter)
+int StructReaderInit(StructFieldReader* structReader, char* orcFileName, long dataOffset,
+		StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
-	Reader** readers = structReader->fields;
-	Reader* reader = NULL;
+	FieldReader** fieldReaders = structReader->fields;
+	FieldReader* field = NULL;
 	Stream* stream = NULL;
-	PrimitiveReader* primitiveReader = NULL;
-	ListReader* listReader = NULL;
+	PrimitiveFieldReader* primitiveReader = NULL;
+	ListFieldReader* listReader = NULL;
 	Type__Kind streamKind = 0;
 	ColumnEncoding* columnEncoding = NULL;
 	int streamNo = 0;
@@ -298,15 +303,15 @@ int StructReader_init(StructReader* structReader, char* orcFileName, long dataOf
 
 	while (fieldNo < structReader->noOfFields)
 	{
-		reader = readers[fieldNo++];
+		field = fieldReaders[fieldNo++];
 
-		if (!reader->required)
+		if (!field->required)
 		{
 			/* skip the not required columns */
 			continue;
 		}
 
-		while (reader->columnNo > stream->column)
+		while (field->columnNo > stream->column)
 		{
 			/* skip columns that doesn't required for reading */
 			currentOffset += stream->length;
@@ -319,15 +324,15 @@ int StructReader_init(StructReader* structReader, char* orcFileName, long dataOf
 			stream = stripeFooter->streams[streamNo];
 		}
 
-		if (reader->kind == TYPE__KIND__LIST)
+		if (field->kind == TYPE__KIND__LIST)
 		{
 			/* if the type is list, first check for present stream as always */
-			reader->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
+			field->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
 
-			if (reader->hasPresentBitReader)
+			if (field->hasPresentBitReader)
 			{
-				result = StreamReader_init(&reader->presentBitReader, TYPE__KIND__BOOLEAN, orcFileName, currentOffset,
-						currentOffset + stream->length, &compressionParameters);
+				result = StreamReaderInit(&field->presentBitReader, TYPE__KIND__BOOLEAN, orcFileName,
+						currentOffset, currentOffset + stream->length, parameters);
 				if (result)
 				{
 					/* cannot read the data stream correctly */
@@ -342,10 +347,10 @@ int StructReader_init(StructReader* structReader, char* orcFileName, long dataOf
 			}
 
 			/* then read the length stream into the reader */
-			streamKind = getStreamKind(reader->kind, 0);
-			listReader = reader->fieldReader;
-			result = StreamReader_init(&listReader->lengthReader, streamKind, orcFileName, currentOffset,
-					currentOffset + stream->length, &compressionParameters);
+			streamKind = GetStreamKind(field->kind, 0);
+			listReader = field->fieldReader;
+			result = StreamReaderInit(&listReader->lengthReader, streamKind, orcFileName, currentOffset,
+					currentOffset + stream->length, parameters);
 
 			if (result)
 			{
@@ -361,15 +366,15 @@ int StructReader_init(StructReader* structReader, char* orcFileName, long dataOf
 
 			stream = stripeFooter->streams[streamNo];
 			/* and finally set the item of the list as the reader and continue */
-			reader = &listReader->itemReader;
+			field = &listReader->itemReader;
 		}
 
-		reader->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
+		field->hasPresentBitReader = stream->kind == STREAM__KIND__PRESENT;
 
-		if (reader->hasPresentBitReader)
+		if (field->hasPresentBitReader)
 		{
-			result = StreamReader_init(&reader->presentBitReader, TYPE__KIND__BOOLEAN, orcFileName, currentOffset,
-					currentOffset + stream->length, &compressionParameters);
+			result = StreamReaderInit(&field->presentBitReader, TYPE__KIND__BOOLEAN, orcFileName,
+					currentOffset, currentOffset + stream->length, parameters);
 
 			if (result)
 			{
@@ -387,16 +392,16 @@ int StructReader_init(StructReader* structReader, char* orcFileName, long dataOf
 			stream = stripeFooter->streams[streamNo];
 		}
 
-		primitiveReader = reader->fieldReader;
-		freePrimitiveReader(primitiveReader);
+		primitiveReader = field->fieldReader;
+		PrimitiveReaderFree(primitiveReader);
 
-		if (reader->kind == TYPE__KIND__STRING)
+		if (field->kind == TYPE__KIND__STRING)
 		{
-			columnEncoding = stripeFooter->columns[reader->columnNo];
+			columnEncoding = stripeFooter->columns[field->columnNo];
 			primitiveReader->dictionarySize = columnEncoding->dictionarysize;
 		}
 
-		noOfDataStreams = getStreamCount(reader->kind);
+		noOfDataStreams = GetStreamCount(field->kind);
 
 		if (streamNo + noOfDataStreams > totalNoOfStreams)
 		{
@@ -405,9 +410,9 @@ int StructReader_init(StructReader* structReader, char* orcFileName, long dataOf
 
 		for (dataStreamIterator = 0; dataStreamIterator < noOfDataStreams; ++dataStreamIterator)
 		{
-			streamKind = getStreamKind(reader->kind, dataStreamIterator);
-			result = StreamReader_init(&primitiveReader->readers[dataStreamIterator], streamKind, orcFileName,
-					currentOffset, currentOffset + stream->length, &compressionParameters);
+			streamKind = GetStreamKind(field->kind, dataStreamIterator);
+			result = StreamReaderInit(&primitiveReader->readers[dataStreamIterator], streamKind, orcFileName,
+					currentOffset, currentOffset + stream->length, parameters);
 			if (result)
 			{
 				return result;

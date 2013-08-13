@@ -7,16 +7,14 @@
 #include "recordReader.h"
 #include "util.h"
 
-#define isComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
+PostScript* PostScriptInit(char* orcFileName, long* postScriptSizeOffset, CompressionParameters* parameters);
 
-PostScript* readPostscript(char* orcFileName, long* postScriptSizeOffset);
+Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, CompressionParameters* parameters);
 
-Footer* readFileFooter(char* orcFileName, int footerOffset, long footerSize);
+StripeFooter* StripeFooterInit(char* orcFile, StripeInformation* stripeInfo, CompressionParameters* parameters);
 
-StripeFooter* readStripeFooter(char* orcFile, StripeInformation* stripeInfo);
+int StructReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields);
 
-int StructReader_allocate(StructReader* reader, Footer* footer, char* selectedFields);
-
-int StructReader_init(StructReader* structReader, char* orcFileName, long dataOffset, StripeFooter* stripeFooter);
+int StructReaderInit(StructFieldReader* structReader, char* orcFileName, long dataOffset, StripeFooter* stripeFooter, CompressionParameters* parameters);
 
 #endif /* FILEREADER_H_ */

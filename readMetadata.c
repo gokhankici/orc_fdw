@@ -10,6 +10,14 @@
 long totalBytesRead = 0;
 long totalUncompressedBytes = 0;
 
+char* getTypeKindName(Type__Kind kind);
+void printType(Type** types, char* typeName, int typeIndex, int depth);
+void printStatistics(ColumnStatistics* statistics, Type* type);
+char* getStreamKindName(Stream__Kind kind);
+char* getEncodingName(ColumnEncoding__Kind kind);
+void printDataInHex(uint8_t* data, int length);
+void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset);
+
 char* getTypeKindName(Type__Kind kind)
 {
 	if (kind == TYPE__KIND__BOOLEAN)
@@ -269,6 +277,7 @@ int main(int argc, const char * argv[])
 	int noOfUserMetadataItems = 0;
 	ColumnStatistics* statistics;
 	StripeFooter* stripeFooter;
+	CompressionParameters compressionParameters;
 
 	if (argc != 2)
 	{
@@ -278,7 +287,7 @@ int main(int argc, const char * argv[])
 
 	orcFileName = (char*) argv[1];
 
-	postScript = readPostscript(orcFileName, &psOffset);
+	postScript = PostScriptInit(orcFileName, &psOffset, &compressionParameters);
 	if (postScript == NULL)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
@@ -299,7 +308,7 @@ int main(int argc, const char * argv[])
 	printf("Magic : %s\n", postScript->magic);
 
 	/* read the file footer */
-	footer = readFileFooter(orcFileName, psOffset - footerSize, footerSize);
+	footer = FileFooterInit(orcFileName, psOffset - footerSize, footerSize, &compressionParameters);
 	if (footer == NULL)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
@@ -363,7 +372,7 @@ int main(int argc, const char * argv[])
 	for (index = 0; index < noOfStripes; ++index)
 	{
 		stripe = stripes[index];
-		stripeFooter = readStripeFooter(orcFileName, stripe);
+		stripeFooter = StripeFooterInit(orcFileName, stripe, &compressionParameters);
 		if (stripeFooter == NULL)
 		{
 			fprintf(stderr, "Error while reading stripe footer\n");

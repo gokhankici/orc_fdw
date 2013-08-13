@@ -38,14 +38,17 @@ static int parseNanos(long serializedData)
  *
  * @return length of the integer after variable-length encoding
  */
-static int readVarLenInteger(CompressedFileStream* stream, uint64_t *data)
+static int readVarLenInteger(FileStream* stream, uint64_t *data)
 {
-	*data = 0;
 	int shift = 0;
 	int bytesRead = 0;
 	char byte = 0;
+	int result = 0;
+	*data = 0;
 
-	if (CompressedFileStream_readByte(stream, &byte))
+	result = CompressedFileStreamReadByte(stream, &byte);
+
+	if (result)
 	{
 		return -1;
 	}
@@ -56,7 +59,9 @@ static int readVarLenInteger(CompressedFileStream* stream, uint64_t *data)
 		shift += 7;
 		bytesRead++;
 
-		if (CompressedFileStream_readByte(stream, &byte))
+		result = CompressedFileStreamReadByte(stream, &byte);
+
+		if (result)
 		{
 			return -1;
 		}
@@ -77,7 +82,7 @@ static int initBooleanReader(StreamReader* boolState)
 {
 	char type = 0;
 
-	if (CompressedFileStream_readByte(boolState->stream, &type))
+	if (CompressedFileStreamReadByte(boolState->stream, &type))
 	{
 		return -1;
 	}
@@ -95,7 +100,7 @@ static int initBooleanReader(StreamReader* boolState)
 		boolState->noOfLeftItems = type + 3 - 1;
 	}
 
-	if (CompressedFileStream_readByte(boolState->stream, &type))
+	if (CompressedFileStreamReadByte(boolState->stream, &type))
 	{
 		return -1;
 	}
@@ -117,7 +122,7 @@ static int initByteReader(StreamReader* byteState)
 {
 	char type = 0;
 
-	if (CompressedFileStream_readByte(byteState->stream, &type))
+	if (CompressedFileStreamReadByte(byteState->stream, &type))
 	{
 		return -1;
 	}
@@ -139,7 +144,7 @@ static int initByteReader(StreamReader* byteState)
 		/* step is always 0 for byte streams */
 		byteState->step = 0;
 
-		if (CompressedFileStream_readByte(byteState->stream, &type))
+		if (CompressedFileStreamReadByte(byteState->stream, &type))
 		{
 			return -1;
 		}
@@ -164,7 +169,7 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState)
 	char type = 0;
 	int bytesRead = 0;
 
-	if (CompressedFileStream_readByte(intState->stream, &type))
+	if (CompressedFileStreamReadByte(intState->stream, &type))
 	{
 		return -1;
 	}
@@ -183,7 +188,7 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState)
 		intState->currentEncodingType = RLE;
 		intState->noOfLeftItems = type + 3;
 
-		if (CompressedFileStream_readByte(intState->stream, &intState->step))
+		if (CompressedFileStreamReadByte(intState->stream, &intState->step))
 		{
 			return -1;
 		}
@@ -210,13 +215,13 @@ static int initIntegerReader(Type__Kind kind, StreamReader* intState)
  *
  * @return 0 for success, 1 for failure
  */
-int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
+int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
 		long limit, CompressionParameters* parameters)
 {
 
 	if (streamReader->stream != NULL)
 	{
-		if (CompressedFileStream_free(streamReader->stream))
+		if (CompressedFileStreamFree(streamReader->stream))
 		{
 			fprintf(stderr, "Error deleting previous compressed file stream\n");
 			return 1;
@@ -224,8 +229,8 @@ int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* f
 		streamReader->stream = NULL;
 	}
 
-	streamReader->stream = CompressedFileStream_init(fileName, offset, limit,
-			parameters->compressionBlockSize, parameters->compressionKind);
+	streamReader->stream = CompressedFileStreamInit(fileName, offset, limit, parameters->compressionBlockSize,
+			parameters->compressionKind);
 
 	switch (streamKind)
 	{
@@ -267,7 +272,7 @@ static char readBoolean(StreamReader* booleanReaderState)
 			if (initResult)
 			{
 				/* error while reading from input stream */
-				fprintf(stderr, "Error while re-initializing the boolean reader");
+				fprintf(stderr, "Error while re-initializing the boolean reader\n");
 				return -1;
 			}
 		}
@@ -276,7 +281,7 @@ static char readBoolean(StreamReader* booleanReaderState)
 			if (booleanReaderState->currentEncodingType == VARIABLE_LENGTH)
 			{
 				/* read next byte from the stream */
-				if (CompressedFileStream_readByte(booleanReaderState->stream, &result))
+				if (CompressedFileStreamReadByte(booleanReaderState->stream, &result))
 				{
 					return -1;
 				}
@@ -314,7 +319,7 @@ static int readByte(StreamReader* byteReaderState, uint8_t *result)
 		if (initResult)
 		{
 			/* error while reading from input stream */
-			fprintf(stderr, "Error while re-initializing the byte reader");
+			fprintf(stderr, "Error while re-initializing the byte reader\n");
 			return -1;
 		}
 	}
@@ -322,7 +327,7 @@ static int readByte(StreamReader* byteReaderState, uint8_t *result)
 	/* try to read from the stream or generate an item from run */
 	if (byteReaderState->currentEncodingType == VARIABLE_LENGTH)
 	{
-		if (CompressedFileStream_readByte(byteReaderState->stream, (char*) result))
+		if (CompressedFileStreamReadByte(byteReaderState->stream, (char*) result))
 		{
 			return -1;
 		}
@@ -347,10 +352,10 @@ static int readByte(StreamReader* byteReaderState, uint8_t *result)
  */
 static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *result)
 {
-	*result = 0;
 	int bytesRead = 0;
 	char step = 0;
 	uint64_t data = 0;
+	*result = 0;
 
 	if (intReaderState->noOfLeftItems == 0)
 	{
@@ -359,7 +364,7 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 		if (initResult)
 		{
 			/* error while reading from input stream */
-			fprintf(stderr, "Error while re-initializing the integer reader");
+			fprintf(stderr, "Error while re-initializing the integer reader\n");
 			return -1;
 		}
 	}
@@ -386,8 +391,8 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 		case TYPE__KIND__SHORT:
 		case TYPE__KIND__INT:
 		case TYPE__KIND__LONG:
-			intReaderState->data = toUnsignedInteger(
-					toSignedInteger(data) + step);
+			intReaderState->data = ToUnsignedInteger(
+					ToSignedInteger(data) + step);
 			break;
 		default:
 			intReaderState->data += step;
@@ -410,7 +415,7 @@ static int readInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 static int readFloat(StreamReader* fpState, float *data)
 {
 	int floatLength = sizeof(float);
-	char* floatBytes = CompressedFileStream_read(fpState->stream, &floatLength);
+	char* floatBytes = CompressedFileStreamRead(fpState->stream, &floatLength);
 	if (floatBytes == NULL || floatLength != sizeof(float))
 	{
 		return -1;
@@ -432,7 +437,7 @@ static int readFloat(StreamReader* fpState, float *data)
 static int readDouble(StreamReader* fpState, double *data)
 {
 	int doubleLength = sizeof(double);
-	char* doubleBytes = CompressedFileStream_read(fpState->stream, &doubleLength);
+	char* doubleBytes = CompressedFileStreamRead(fpState->stream, &doubleLength);
 	if (doubleBytes == NULL || doubleLength != sizeof(double))
 	{
 		return -1;
@@ -455,7 +460,7 @@ static int readDouble(StreamReader* fpState, double *data)
 static int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length)
 {
 	int requiredLength = length;
-	char* bytes = CompressedFileStream_read(binaryReaderState->stream, &length);
+	char* bytes = CompressedFileStreamRead(binaryReaderState->stream, &length);
 
 	if (bytes == NULL || requiredLength != length)
 	{
@@ -476,15 +481,15 @@ static int readBinary(StreamReader* binaryReaderState, uint8_t* data, int length
  *
  * @return 0 for success, -1 for failure
  */
-static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
+static int readPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* length)
 {
-	PrimitiveReader* primitiveReader = (PrimitiveReader*) reader->fieldReader;
+	PrimitiveFieldReader* primitiveReader = (PrimitiveFieldReader*) fieldReader->fieldReader;
 
-	StreamReader* presentStreamReader = &reader->presentBitReader;
+	StreamReader* presentStreamReader = &fieldReader->presentBitReader;
 	StreamReader* booleanStreamReader = NULL;
 	StreamReader* byteStreamReader = NULL;
 	StreamReader* integerStreamReader = NULL;
-	StreamReader* fpStreamReader;
+	StreamReader* fpStreamReader = NULL;
 	StreamReader* binaryReader = NULL;
 	StreamReader *nanoSecondsReader = NULL;
 
@@ -499,18 +504,16 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	char isPresent = 0;
 	int result = 0;
 
-	if (reader->hasPresentBitReader && (isPresent = readBoolean(presentStreamReader)) == 0)
+	if (fieldReader->hasPresentBitReader)
 	{
-		/* not present, return 1 as null */
-		return 1;
-	}
-	else if (isPresent == -1)
-	{
-		/* error occured while reading bit, return error code */
-		return -1;
+		isPresent = readBoolean(presentStreamReader);
+		if (isPresent <= 0)
+		{
+			return isPresent;
+		}
 	}
 
-	switch (reader->kind)
+	switch (fieldReader->kind)
 	{
 	case TYPE__KIND__BOOLEAN:
 		booleanStreamReader = &primitiveReader->readers[DATA];
@@ -521,8 +524,8 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	case TYPE__KIND__INT:
 	case TYPE__KIND__LONG:
 		integerStreamReader = &primitiveReader->readers[DATA];
-		result = readInteger(reader->kind, integerStreamReader, &data64);
-		value->value64 = toSignedInteger(data64);
+		result = readInteger(fieldReader->kind, integerStreamReader, &data64);
+		value->value64 = ToSignedInteger(data64);
 		break;
 	case TYPE__KIND__FLOAT:
 		fpStreamReader = &primitiveReader->readers[DATA];
@@ -546,7 +549,7 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
 					++dictionaryIterator)
 			{
-				result = readInteger(reader->kind, integerStreamReader, &wordLength);
+				result = readInteger(fieldReader->kind, integerStreamReader, &wordLength);
 
 				if (result < 0)
 				{
@@ -566,44 +569,8 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 			}
 		}
 
-//		if (primitiveReader->dictionary == NULL)
-//		{
-//			primitiveReader->wordLength = malloc(sizeof(int) * primitiveReader->dictionarySize);
-//
-//			integerStreamReader = &primitiveReader->readers[LENGTH];
-//			binaryReader = &primitiveReader->readers[DICTIONARY_DATA];
-//			result = CompressedFileStream_readRemaining(binaryReader->stream, &primitiveReader->dictionary,
-//					&dataLength);
-//
-//			if (result < 0)
-//			{
-//				return -1;
-//			}
-//
-//			/* read the dictionary */
-//			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
-//					++dictionaryIterator)
-//			{
-//				primitiveReader->wordLength[dictionaryIterator] = currentOffset;
-//				result = readInteger(reader->kind, integerStreamReader, &wordLength);
-//
-//				if (result < 0)
-//				{
-//					return -1;
-//				}
-//
-//				currentOffset += wordLength;
-//			}
-//
-//			if (currentOffset != dataLength)
-//			{
-//				fprintf(stderr, "Dictionary size and sum of item sizes do not match\n");
-//				return -1;
-//			}
-//		}
-
 		integerStreamReader = &primitiveReader->readers[DATA];
-		result = readInteger(reader->kind, integerStreamReader, &index);
+		result = readInteger(fieldReader->kind, integerStreamReader, &index);
 		value->binary = primitiveReader->dictionary[index];
 //		value->binary = primitiveReader->dictionary + primitiveReader->wordLength[index];
 		break;
@@ -614,7 +581,7 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	case TYPE__KIND__BINARY:
 		integerStreamReader = &primitiveReader->readers[LENGTH];
 		binaryReader = &primitiveReader->readers[DATA];
-		result = readInteger(reader->kind, integerStreamReader, &wordLength);
+		result = readInteger(fieldReader->kind, integerStreamReader, &wordLength);
 
 		if (result < 0)
 		{
@@ -630,7 +597,7 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 		/* seconds primitiveReader */
 		integerStreamReader = &primitiveReader->readers[DATA];
 		result = readInteger(TYPE__KIND__LONG, integerStreamReader, &seconds);
-		seconds = toSignedInteger(seconds);
+		seconds = ToSignedInteger(seconds);
 
 		/* nano seconds primitiveReader */
 		nanoSecondsReader = &primitiveReader->readers[SECONDARY];
@@ -658,18 +625,18 @@ static int readPrimitiveType(Reader* reader, FieldValue* value, int* length)
 	return result;
 }
 
-static int readListElement(Reader* reader, Field* field, int* length)
+static int readListElement(FieldReader* fieldReader, Field* field, int* length)
 {
-	ListReader* listReader = reader->fieldReader;
-	Reader* itemReader = &listReader->itemReader;
-	StreamReader* presentStreamReader = &reader->presentBitReader;
+	ListFieldReader* listReader = fieldReader->fieldReader;
+	FieldReader* itemReader = &listReader->itemReader;
+	StreamReader* presentStreamReader = &fieldReader->presentBitReader;
 	uint64_t listSize = 0;
 	int result = 0;
 	int iterator = 0;
 	char isPresent = 0;
 	FieldValue* value = NULL;
 
-	if (reader->hasPresentBitReader && (isPresent = readBoolean(presentStreamReader)) == 0)
+	if (fieldReader->hasPresentBitReader && (isPresent = readBoolean(presentStreamReader)) == 0)
 	{
 		/* not present, return 1 as null */
 		return 1;
@@ -680,7 +647,7 @@ static int readListElement(Reader* reader, Field* field, int* length)
 		return -1;
 	}
 
-	result = readInteger(reader->kind, &listReader->lengthReader, &listSize);
+	result = readInteger(fieldReader->kind, &listReader->lengthReader, &listSize);
 	if (result)
 	{
 		/* error while reading the list size */
@@ -711,26 +678,30 @@ static int readListElement(Reader* reader, Field* field, int* length)
 	return 0;
 }
 
-int readField(Reader* reader, Field* field, int* length)
+int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length)
 {
 	field->list = NULL;
 	field->listItemSizes = NULL;
 	field->isItemNull = NULL;
 
-	if (reader->kind != TYPE__KIND__LIST)
+	if (fieldReader->kind == TYPE__KIND__LIST)
 	{
-		return readPrimitiveType(reader, &field->value, length);
+		return readListElement(fieldReader, field, length);
+	}
+	else if (!IsComplexType(fieldReader->kind))
+	{
+		return readPrimitiveType(fieldReader, &field->value, length);
 	}
 	else
 	{
-		return readListElement(reader, field, length);
+		return -1;
 	}
 }
 
 /**
  * Get the stream type of each data stream of a data type
  */
-Type__Kind getStreamKind(Type__Kind type, int streamIndex)
+Type__Kind GetStreamKind(Type__Kind type, int streamIndex)
 {
 	switch (type)
 	{
@@ -786,7 +757,7 @@ Type__Kind getStreamKind(Type__Kind type, int streamIndex)
 /**
  * Get # data streams of a data type (excluding the present bit stream)
  */
-int getStreamCount(Type__Kind type)
+int GetStreamCount(Type__Kind type)
 {
 	switch (type)
 	{
@@ -812,7 +783,7 @@ int getStreamCount(Type__Kind type)
 	}
 }
 
-void freePrimitiveReader(PrimitiveReader* reader)
+void PrimitiveReaderFree(PrimitiveFieldReader* reader)
 {
 	int iterator = 0;
 	if (reader->dictionary)
@@ -831,40 +802,40 @@ void freePrimitiveReader(PrimitiveReader* reader)
 	{
 		if (reader->readers[iterator].stream != NULL)
 		{
-			CompressedFileStream_free(reader->readers[iterator].stream);
+			CompressedFileStreamFree(reader->readers[iterator].stream);
 			reader->readers[iterator].stream = NULL;
 		}
 	}
 }
 
-void freeListReader(ListReader* reader)
+void ListFieldReaderFree(ListFieldReader* reader)
 {
-	CompressedFileStream_free(reader->lengthReader.stream);
+	CompressedFileStreamFree(reader->lengthReader.stream);
 
 	/* only list of primitive types are supported */
-	freePrimitiveReader((PrimitiveReader*) reader->itemReader.fieldReader);
+	PrimitiveReaderFree((PrimitiveFieldReader*) reader->itemReader.fieldReader);
 }
 
-void freeStructReader(StructReader* structReader)
+void StructFieldReaderFree(StructFieldReader* structReader)
 {
-	Reader* reader = NULL;
+	FieldReader* fieldReader = NULL;
 	int iterator = 0;
 
 	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
 	{
-		reader = structReader->fields[iterator];
-		if (reader->required)
+		fieldReader = structReader->fields[iterator];
+		if (fieldReader->required)
 		{
-			if (reader->kind == TYPE__KIND__LIST)
+			if (fieldReader->kind == TYPE__KIND__LIST)
 			{
-				freeListReader(reader->fieldReader);
+				ListFieldReaderFree(fieldReader->fieldReader);
 			}
 			else
 			{
-				freePrimitiveReader(reader->fieldReader);
+				PrimitiveReaderFree(fieldReader->fieldReader);
 			}
 		}
-		free(reader);
+		free(fieldReader);
 	}
 	free(structReader->fields);
 	free(structReader);

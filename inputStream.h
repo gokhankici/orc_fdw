@@ -1,5 +1,5 @@
 /*
- * InputStream.h
+ * inputStream.h
  *
  *  Created on: Aug 10, 2013
  *      Author: gokhan
@@ -18,8 +18,6 @@ typedef struct
 	CompressionKind compressionKind;
 	long compressionBlockSize;
 } CompressionParameters;
-
-extern CompressionParameters compressionParameters;
 
 typedef struct
 {
@@ -40,20 +38,12 @@ typedef struct
 	int bufferSize;
 	/* buffer to store the file data */
 	char* buffer;
-} FileStream;
-
-FileStream* FileStream_init(char* filePath, long offset, long limit, int bufferSize);
-int FileStream_free(FileStream*);
-char* FileStream_read(FileStream*, int *length);
-int FileStream_readByte(FileStream* fileStream, char *value);
-int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLength);
-int FileStream_skip(FileStream*, int skip);
-long FileStream_bytesLeft(FileStream*);
+} FileBuffer;
 
 typedef struct
 {
 	/* stream for decompression */
-	FileStream* fileStream;
+	FileBuffer* fileBuffer;
 
 	/* block size used for compression */
 	int bufferSize;
@@ -70,19 +60,19 @@ typedef struct
 	 * 1 if uncompressed stream is the same as compressed one,
 	 * 0 if stream is a "really" compressed one.
 	 */
-	char isOriginal;
+	char isNotCompressed;
 	/* offset of the start of the buffer in the uncompressed data stream */
 	long offset;
 
 	/* this is for reading bytes from cross boundries */
 	char* tempBuffer;
-} CompressedFileStream;
+} FileStream;
 
-CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize,
+FileStream* CompressedFileStreamInit(char* filePath, long offset, long limit, int bufferSize,
 		CompressionKind kind);
-int CompressedFileStream_free(CompressedFileStream*);
-char* CompressedFileStream_read(CompressedFileStream*, int *length);
-int CompressedFileStream_readRemaining(CompressedFileStream*, char** data, int* dataLength);
-int CompressedFileStream_readByte(CompressedFileStream* stream, char* value);
+int CompressedFileStreamFree(FileStream*);
+char* CompressedFileStreamRead(FileStream*, int *length);
+int CompressedFileStreamReadRemaining(FileStream*, char** data, int* dataLength);
+int CompressedFileStreamReadByte(FileStream* stream, char* value);
 
 #endif /* INPUTSTREAM_H_ */

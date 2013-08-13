@@ -1,15 +1,17 @@
-CC			 = gcc
-LIBS		+= `pkg-config --libs libprotobuf-c zlib`
-INCLUDES	+= `pkg-config --cflags libprotobuf-c zlib`
-CFLAGS		 = -Wall -g -pg
+CC			 =	gcc
+LIBS		+= 	`pkg-config --libs libprotobuf-c zlib`
+INCLUDES	+= 	`pkg-config --cflags libprotobuf-c zlib`
+CFLAGS		 = 	-Wall -O3 -Wmissing-prototypes -Wpointer-arith \
+				-Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute \
+				-Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard
+#not added flags -g -pg
 
 SNAPPY_FOLDER	= snappy-c
 EXEC_FOLDER		= out
 
-READMETADATA_OBJECTS	= orc_proto.pb-c.o $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o readMetadata.o InputStream.o
-TESTFILEREADER_OBJECTS	= orc_proto.pb-c.o testFileReader.o recordReader.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o InputStream.o 
-TESTINPUTSTREAM_OBJECTS	= InputStream.o testInputStream.o $(SNAPPY_FOLDER)/snappy.o util.o
-EXECUTABLES				= readMetadata testFileReader testInputStream
+READMETADATA_OBJECTS	= orc_proto.pb-c.o $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o readMetadata.o inputStream.o
+TESTFILEREADER_OBJECTS	= orc_proto.pb-c.o testFileReader.o recordReader.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o inputStream.o 
+EXECUTABLES				= readMetadata testFileReader
 
 all:			snappy_c orc_proto $(EXECUTABLES) 
 				mv $(EXECUTABLES) $(EXEC_FOLDER)
@@ -30,14 +32,11 @@ orc_proto.pb-c.c:
 .o:		
 				$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
 
-readMetadata:		$(READMETADATA_OBJECTS)
+readMetadata:	$(READMETADATA_OBJECTS)
 
-testFileReader:		$(TESTFILEREADER_OBJECTS)
-
-testInputStream:	$(TESTINPUTSTREAM_OBJECTS)
-
+testFileReader:	$(TESTFILEREADER_OBJECTS)
 
 .PHONY:			clean
 
 clean:	
-				rm -f $(EXEC_FOLDER)/* *.o
+				rm -f $(EXEC_FOLDER)/* *.o gmon.out

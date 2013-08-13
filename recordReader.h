@@ -10,7 +10,7 @@
 
 #include <time.h>
 #include "orc_proto.pb-c.h"
-#include "InputStream.h"
+#include "inputStream.h"
 
 #define DATA 			0
 #define LENGTH 			1
@@ -26,8 +26,10 @@
 #define MAX_POSTSCRIPT_SIZE 255
 #define STREAM_BUFFER_SIZE 1024
 
-#define toUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
-#define toSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
+#define ToUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
+#define ToSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
+
+#define IsComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
 
 typedef enum
 {
@@ -58,7 +60,7 @@ typedef struct
 typedef struct
 {
 	/* stream to read from the file */
-	CompressedFileStream* stream;
+	FileStream* stream;
 
 	/* type of the encoding */
 	EncodingType currentEncodingType;
@@ -90,7 +92,7 @@ typedef struct
 
 	/* Actual field reader, can be struct, list, or primitive */
 	void* fieldReader;
-} Reader;
+} FieldReader;
 
 /**
  * For primitive types
@@ -104,37 +106,39 @@ typedef struct
 	int dictionarySize;
 	int* wordLength;
 	char** dictionary;
-} PrimitiveReader;
+} PrimitiveFieldReader;
 
 typedef struct
 {
 	StreamReader lengthReader;
-	Reader itemReader;
-} ListReader;
+	FieldReader itemReader;
+} ListFieldReader;
 
 typedef struct
 {
 	int noOfFields;
-	Reader** fields;
-} StructReader;
+	FieldReader** fields;
+} StructFieldReader;
 
 extern struct tm BASE_TIMESTAMP;
 
-void freeStructReader(StructReader* reader);
-void freeListReader(ListReader* reader);
-void freePrimitiveReader(PrimitiveReader* reader);
+void StructFieldReaderFree(StructFieldReader* reader);
+void ListFieldReaderFree(ListFieldReader* reader);
+void PrimitiveReaderFree(PrimitiveFieldReader* reader);
 
-int readStruct(StructReader* reader, void* value);
-int StreamReader_init(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
+int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
 		long limit, CompressionParameters* parameters);
 
 /**
  * Reads one element from the type.
  * The returned value is <0 for error, 1 for null, 0 for not-null value
  */
-int readField(Reader* reader, Field* field, int* length);
+int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
 
-Type__Kind getStreamKind(Type__Kind type, int streamIndex);
-int getStreamCount(Type__Kind type);
+/**
+ * Helper functions to get the kth stream and its type
+ */
+Type__Kind GetStreamKind(Type__Kind type, int streamIndex);
+int GetStreamCount(Type__Kind type);
 
 #endif /* RECORDREADER_H_ */

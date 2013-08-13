@@ -97,8 +97,8 @@
 
 void testStringReader()
 {
-	Reader reader;
-	PrimitiveReader stringReader;
+	FieldReader reader;
+	PrimitiveFieldReader stringReader;
 
 	uint8_t present[2] =
 	{ 0xFF, 0xB0 };
@@ -120,14 +120,14 @@ void testStringReader()
 	stringReader.dictionary = NULL;
 	stringReader.dictionarySize = 2;
 
-	StreamReader_init(TYPE__KIND__BOOLEAN, &reader.presentBitReader, present, (long) 2);
-	StreamReader_init(TYPE__KIND__INT, &stringReader.readers[DATA], data, (long) 4);
-	StreamReader_init(TYPE__KIND__INT, &stringReader.readers[LENGTH], length, (long) 3);
-	StreamReader_init(TYPE__KIND__BINARY, &stringReader.readers[DICTIONARY_DATA], dictionary, (long) 12);
+	StreamReaderInit(TYPE__KIND__BOOLEAN, &reader.presentBitReader, present, (long) 2);
+	StreamReaderInit(TYPE__KIND__INT, &stringReader.readers[DATA], data, (long) 4);
+	StreamReaderInit(TYPE__KIND__INT, &stringReader.readers[LENGTH], length, (long) 3);
+	StreamReaderInit(TYPE__KIND__BINARY, &stringReader.readers[DICTIONARY_DATA], dictionary, (long) 12);
 
 	for (iterator = 0; iterator < noOfWords; ++iterator)
 	{
-		result = readField(&reader, &field, NULL);
+		result = FieldReaderRead(&reader, &field, NULL);
 		switch (result)
 		{
 		case 0:

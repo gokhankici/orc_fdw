@@ -1,5 +1,5 @@
 /*
- * InputStream.c
+ * inputStream.c
  *
  *  Created on: Aug 10, 2013
  *      Author: gokhan
@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
-#include "InputStream.h"
+#include "inputStream.h"
 #include "util.h"
 #include "snappy-c/snappy.h"
 
@@ -25,9 +25,9 @@ extern long totalUncompressedBytes;
  *
  * @return NULL for failure, non-NULL for success
  */
-FileStream* FileStream_init(char* filePath, long offset, long limit, int bufferSize)
+static FileBuffer* FileBufferInit(char* filePath, long offset, long limit, int bufferSize)
 {
-	FileStream* fileStream = malloc(sizeof(FileStream));
+	FileBuffer* fileStream = malloc(sizeof(FileBuffer));
 	int result = 0;
 	if (filePath == NULL)
 	{
@@ -72,7 +72,7 @@ FileStream* FileStream_init(char* filePath, long offset, long limit, int bufferS
  *
  * @return 0 for success, -1 for failure
  */
-int FileStream_free(FileStream* fileStream)
+static int FileBufferFree(FileBuffer* fileStream)
 {
 	int result = 0;
 
@@ -101,7 +101,7 @@ int FileStream_free(FileStream* fileStream)
  *
  * @return no of bytes read from the file when the buffer is filled. -1 for failure
  */
-static int FileStream_fill(FileStream* fileStream)
+static int FileBufferFill(FileBuffer* fileStream)
 {
 	int bytesRead = 0;
 	int result = 0;
@@ -174,7 +174,7 @@ static int FileStream_fill(FileStream* fileStream)
  *
  * @return pointer to the data in the stream buffer
  */
-char* FileStream_read(FileStream* fileStream, int *length)
+static char* FileBufferRead(FileBuffer* fileStream, int *length)
 {
 	char* data = NULL;
 	int result = 0;
@@ -186,7 +186,7 @@ char* FileStream_read(FileStream* fileStream, int *length)
 
 	if (*length > fileStream->length - fileStream->position)
 	{
-		result = FileStream_fill(fileStream);
+		result = FileBufferFill(fileStream);
 		if (result < 0)
 		{
 			return NULL;
@@ -213,13 +213,13 @@ char* FileStream_read(FileStream* fileStream, int *length)
  *
  * @return 0 for success, -1 for failure
  */
-int FileStream_readByte(FileStream* fileStream, char *value)
+static int FileBufferReadByte(FileBuffer* fileStream, char *value)
 {
 	int result = 0;
 
 	if (fileStream->position >= fileStream->length)
 	{
-		result = FileStream_fill(fileStream);
+		result = FileBufferFill(fileStream);
 		if (result < 0)
 		{
 			return -1;
@@ -245,7 +245,7 @@ int FileStream_readByte(FileStream* fileStream, char *value)
  *
  * @return 0 for success, -1 for failure
  */
-int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLength)
+static int FileBufferReadRemaining(FileBuffer* fileStream, char** data, int* dataLength)
 {
 	char* newBuffer = NULL;
 	int remainingLength = fileStream->limit - (fileStream->offset + fileStream->position);
@@ -253,7 +253,7 @@ int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLengt
 	if (remainingLength <= fileStream->bufferSize)
 	{
 		/* try to fill the buffer if necessary */
-		FileStream_fill(fileStream);
+		FileBufferFill(fileStream);
 		*data = fileStream->buffer + fileStream->position;
 		*dataLength = fileStream->length - fileStream->position;
 	}
@@ -277,7 +277,7 @@ int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLengt
 		fileStream->buffer = newBuffer;
 
 		/* finally fill the new buffer */
-		if (FileStream_fill(fileStream))
+		if (FileBufferFill(fileStream))
 		{
 			return -1;
 		}
@@ -289,39 +289,13 @@ int FileStream_readRemaining(FileStream* fileStream, char** data, int* dataLengt
 }
 
 /**
- * Skip that many bytes from the stream
- *
- * @param fileStream file stream to skip
- * @param skip no of bytes to skip
- *
- * @return actual bytes skipped
- */
-int FileStream_skip(FileStream* fileStream, int skip)
-{
-	int skippedBytes = 0;
-
-	if (skip > fileStream->length - fileStream->position)
-	{
-		skippedBytes = fileStream->length - fileStream->position;
-		fileStream->position = fileStream->length;
-	}
-	else
-	{
-		skippedBytes = skip;
-		fileStream->position += skip;
-	}
-
-	return skippedBytes;
-}
-
-/**
  * Bytes left in the stream
  *
  * @param fileStream stream to query
  *
  * @return no of bytes left unread in the stream
  */
-long FileStream_bytesLeft(FileStream* fileStream)
+static long FileBufferBytesLeft(FileBuffer* fileStream)
 {
 	return fileStream->limit - (fileStream->offset + fileStream->position);
 }
@@ -337,10 +311,10 @@ long FileStream_bytesLeft(FileStream* fileStream)
  *
  * @return NULL for failure, non-NULL for success
  */
-CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, long limit, int bufferSize,
+FileStream* CompressedFileStreamInit(char* filePath, long offset, long limit, int bufferSize,
 		CompressionKind kind)
 {
-	CompressedFileStream *stream = malloc(sizeof(CompressedFileStream));
+	FileStream *stream = malloc(sizeof(FileStream));
 
 	if (kind == COMPRESSION_KIND__NONE)
 	{
@@ -351,9 +325,9 @@ CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, lon
 		stream->bufferSize = bufferSize;
 	}
 
-	stream->fileStream = FileStream_init(filePath, offset, limit, stream->bufferSize);
+	stream->fileBuffer = FileBufferInit(filePath, offset, limit, stream->bufferSize);
 
-	if (stream->fileStream == NULL)
+	if (stream->fileBuffer == NULL)
 	{
 		free(stream);
 		return NULL;
@@ -365,7 +339,7 @@ CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, lon
 	stream->position = 0;
 	stream->length = 0;
 	stream->uncompressedBuffer = NULL;
-	stream->isOriginal = 0;
+	stream->isNotCompressed = 0;
 	stream->tempBuffer = NULL;
 
 	return stream;
@@ -378,14 +352,14 @@ CompressedFileStream* CompressedFileStream_init(char* filePath, long offset, lon
  *
  * @return 0 for success, -1 for failure
  */
-int CompressedFileStream_free(CompressedFileStream* stream)
+int CompressedFileStreamFree(FileStream* stream)
 {
 	if (stream == NULL)
 	{
 		return -1;
 	}
 
-	if (!stream->isOriginal && stream->uncompressedBuffer != NULL)
+	if (!stream->isNotCompressed && stream->uncompressedBuffer != NULL)
 	{
 		free(stream->uncompressedBuffer);
 	}
@@ -395,7 +369,7 @@ int CompressedFileStream_free(CompressedFileStream* stream)
 		free(stream->tempBuffer);
 	}
 
-	if (FileStream_free(stream->fileStream))
+	if (FileBufferFree(stream->fileBuffer))
 	{
 		return -1;
 	}
@@ -412,18 +386,18 @@ int CompressedFileStream_free(CompressedFileStream* stream)
  *
  * @return 0 for success, -1 for failure
  */
-static int readCompressedStreamHeader(CompressedFileStream* stream)
+static int ReadNextCompressedBlock(FileStream* stream)
 {
 	char *header = NULL;
 	int headerLength = COMPRESSED_HEADER_SIZE;
 	char *compressed = NULL;
 	int bufferSize = stream->bufferSize;
-	char isOriginal = 0;
+	char isNotCompressed = 0;
 	int chunkLength = 0;
 	int result = 0;
 	size_t snappyUncompressedSize = 0;
 
-	header = FileStream_read(stream->fileStream, &headerLength);
+	header = FileBufferRead(stream->fileBuffer, &headerLength);
 
 	if (header == NULL || headerLength != COMPRESSED_HEADER_SIZE)
 	{
@@ -440,21 +414,25 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 		return -1;
 	}
 
-	isOriginal = header[0] & 0x01;
+	/*
+	 * Very small streams are not compressed while writing to the file.
+	 * If not compressed, use the FileStreamBuffer's internal buffer
+	 */
+	isNotCompressed = header[0] & 0x01;
 
-	if (isOriginal)
+	if (isNotCompressed)
 	{
-		if (!stream->isOriginal && stream->uncompressedBuffer)
+		if (!stream->isNotCompressed && stream->uncompressedBuffer)
 		{
 			/* free the allocated buffer if compressed is not original before */
 			free(stream->uncompressedBuffer);
 		}
 
-		stream->isOriginal = 1;
+		stream->isNotCompressed = 1;
 
 		/* result is used for temporary storage */
 		result = chunkLength;
-		stream->uncompressedBuffer = FileStream_read(stream->fileStream, &chunkLength);
+		stream->uncompressedBuffer = FileBufferRead(stream->fileBuffer, &chunkLength);
 
 		if (result != chunkLength)
 		{
@@ -467,7 +445,7 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 	}
 	else
 	{
-		stream->isOriginal = 0;
+		stream->isNotCompressed = 0;
 
 		if (stream->uncompressedBuffer == NULL)
 		{
@@ -478,7 +456,7 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 		stream->length = bufferSize;
 
 		result = chunkLength;
-		compressed = FileStream_read(stream->fileStream, &chunkLength);
+		compressed = FileBufferRead(stream->fileBuffer, &chunkLength);
 
 		if (compressed == NULL || result != chunkLength)
 		{
@@ -489,7 +467,7 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
 		switch (stream->compressionKind)
 		{
 		case COMPRESSION_KIND__ZLIB:
-			result = inflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->uncompressedBuffer,
+			result = InflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->uncompressedBuffer,
 					&stream->length);
 
 			if (result != Z_OK)
@@ -547,7 +525,7 @@ static int readCompressedStreamHeader(CompressedFileStream* stream)
  *
  * @return pointer to the data in the stream buffer
  */
-char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
+char* CompressedFileStreamRead(FileStream* stream, int *length)
 {
 	int requestedLength = *length;
 	int result = 0;
@@ -558,12 +536,12 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
 	if (stream->compressionKind == COMPRESSION_KIND__NONE)
 	{
 		/* if there is no compression, read directly from FileStream */
-		return FileStream_read(stream->fileStream, length);
+		return FileBufferRead(stream->fileBuffer, length);
 	}
 
 	if (stream->length == 0 || stream->position == stream->length)
 	{
-		result = readCompressedStreamHeader(stream);
+		result = ReadNextCompressedBlock(stream);
 
 		if (result)
 		{
@@ -592,7 +570,7 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
 		/* set the stream in order to read next compressed block */
 		stream->position = stream->length;
 
-		result = readCompressedStreamHeader(stream);
+		result = ReadNextCompressedBlock(stream);
 
 		if (result)
 		{
@@ -625,19 +603,19 @@ char* CompressedFileStream_read(CompressedFileStream* stream, int *length)
  *
  * @return 0 for success, -1 for failure
  */
-int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
+int CompressedFileStreamReadByte(FileStream* stream, char* value)
 {
 	int result = 0;
 
 	if (stream->compressionKind == COMPRESSION_KIND__NONE)
 	{
 		/* if there is no compression, read directly from FileStream */
-		return FileStream_readByte(stream->fileStream, value);
+		return FileBufferReadByte(stream->fileBuffer, value);
 	}
 
 	if (stream->length == 0 || stream->position == stream->length)
 	{
-		result = readCompressedStreamHeader(stream);
+		result = ReadNextCompressedBlock(stream);
 
 		if (result)
 		{
@@ -657,21 +635,6 @@ int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
 	}
 }
 
-//int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
-//{
-//	int readLength = 1;
-//	char* readBytes = CompressedFileStream_read(stream, &readLength);
-//
-//	if (readBytes == NULL || readLength != 1)
-//	{
-//		return -1;
-//	}
-//
-//	*value = *readBytes;
-//
-//	return 0;
-//}
-
 /**
  * Read all the remaining data in the stream.
  *
@@ -681,7 +644,7 @@ int CompressedFileStream_readByte(CompressedFileStream* stream, char* value)
  *
  * @return 0 for success, -1 for failure
  */
-int CompressedFileStream_readRemaining(CompressedFileStream* stream, char** data, int* dataLength)
+int CompressedFileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 {
 	int result = 0;
 	char* newBuffer = NULL;
@@ -692,13 +655,13 @@ int CompressedFileStream_readRemaining(CompressedFileStream* stream, char** data
 	if (stream->compressionKind == COMPRESSION_KIND__NONE)
 	{
 		/* if there is no compression, read directly from FileStream */
-		return FileStream_readRemaining(stream->fileStream, data, dataLength);
+		return FileBufferReadRemaining(stream->fileBuffer, data, dataLength);
 	}
 
 	if (stream->length == 0 || stream->position == stream->length)
 	{
 		/* if not any bytes is read from the stream before, init it first */
-		result = readCompressedStreamHeader(stream);
+		result = ReadNextCompressedBlock(stream);
 		if (result)
 		{
 			fprintf(stderr, "Error reading compressed stream header\n");
@@ -706,7 +669,7 @@ int CompressedFileStream_readRemaining(CompressedFileStream* stream, char** data
 		}
 	}
 
-	if (FileStream_bytesLeft(stream->fileStream))
+	if (FileBufferBytesLeft(stream->fileBuffer))
 	{
 		/* allocate space for the uncompressed data*/
 		newBufferSize = stream->bufferSize * 2;
@@ -715,9 +678,9 @@ int CompressedFileStream_readRemaining(CompressedFileStream* stream, char** data
 		memcpy(newBuffer, stream->uncompressedBuffer + stream->position, newBufferPosition);
 
 		/* while file has still data, decompress the block and add it to new buffer */
-		while (FileStream_bytesLeft(stream->fileStream))
+		while (FileBufferBytesLeft(stream->fileBuffer))
 		{
-			result = readCompressedStreamHeader(stream);
+			result = ReadNextCompressedBlock(stream);
 			if (result)
 			{
 				fprintf(stderr, "Error reading compressed stream header\n");
