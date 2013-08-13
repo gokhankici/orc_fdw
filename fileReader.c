@@ -61,8 +61,7 @@ PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, Compressio
 		return NULL;
 	}
 
-	parameters->compressionBlockSize =
-			postScript->has_compressionblocksize ? postScript->compressionblocksize : 0;
+	parameters->compressionBlockSize = postScript->has_compressionblocksize ? postScript->compressionblocksize : 0;
 	parameters->compressionKind = postScript->has_compression ? postScript->compression : 0;
 
 	fclose(orcFile);
@@ -79,8 +78,7 @@ PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, Compressio
  *
  * @return NULL for failure, non-NULL for footer
  */
-Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
-		CompressionParameters* parameters)
+Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, CompressionParameters* parameters)
 {
 	Footer* footer = NULL;
 	FileStream* stream = NULL;
@@ -88,7 +86,7 @@ Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
 	int uncompressedFooterSize = 0;
 	int result = 0;
 
-	stream = CompressedFileStreamInit(orcFileName, footerOffset, footerOffset + footerSize,
+	stream = FileStreamInit(orcFileName, footerOffset, footerOffset + footerSize,
 			parameters->compressionBlockSize, parameters->compressionKind);
 
 	if (stream == NULL)
@@ -97,7 +95,7 @@ Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
 		return NULL;
 	}
 
-	result = CompressedFileStreamReadRemaining(stream, &uncompressedFooter, &uncompressedFooterSize);
+	result = FileStreamReadRemaining(stream, &uncompressedFooter, &uncompressedFooterSize);
 
 	if (result)
 	{
@@ -114,7 +112,7 @@ Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
 		return NULL;
 	}
 
-	CompressedFileStreamFree(stream);
+	FileStreamFree(stream);
 
 	return footer;
 }
@@ -127,8 +125,7 @@ Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
  *
  * @return NULL for failure, non-NULL for stripe footer
  */
-StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
-		CompressionParameters* parameters)
+StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo, CompressionParameters* parameters)
 {
 	StripeFooter* stripeFooter = NULL;
 	FileStream *stream = NULL;
@@ -139,9 +136,8 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 
 	stripeFooterOffset = stripeInfo->offset + (stripeInfo->has_indexlength ? stripeInfo->indexlength : 0)
 			+ stripeInfo->datalength;
-	stream = CompressedFileStreamInit(orcFileName, stripeFooterOffset,
-			stripeFooterOffset + stripeInfo->footerlength, parameters->compressionBlockSize,
-			parameters->compressionKind);
+	stream = FileStreamInit(orcFileName, stripeFooterOffset, stripeFooterOffset + stripeInfo->footerlength,
+			parameters->compressionBlockSize, parameters->compressionKind);
 
 	if (stream == NULL)
 	{
@@ -150,7 +146,7 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 	}
 
 	stripeFooter = NULL;
-	result = CompressedFileStreamReadRemaining(stream, &stripeFooterBuffer, &uncompressedStripeFooterSize);
+	result = FileStreamReadRemaining(stream, &stripeFooterBuffer, &uncompressedStripeFooterSize);
 
 	if (result)
 	{
@@ -165,7 +161,7 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 		return NULL;
 	}
 
-	CompressedFileStreamFree(stream);
+	FileStreamFree(stream);
 
 	return stripeFooter;
 }
@@ -242,6 +238,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 			listItemReader->presentBitReader.stream = NULL;
 			listItemReader->columnNo = type->subtypes[0];
 			listItemReader->kind = types[listItemReader->columnNo]->kind;
+			listItemReader->required = 1;
 
 			if (IsComplexType(listItemReader->kind))
 			{
@@ -281,11 +278,11 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 	return 0;
 }
 
-static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset,
-		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters);
+static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset, int* streamNo,
+		StripeFooter* stripeFooter, CompressionParameters* parameters);
 
-int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformation* stripe,
-		StripeFooter* stripeFooter, CompressionParameters* parameters)
+int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformation* stripe, StripeFooter* stripeFooter,
+		CompressionParameters* parameters)
 {
 	long currentDataOffset = 0;
 	int streamNo = 0;
@@ -296,7 +293,6 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformati
 
 	while (streamNo < stripeFooter->n_streams && stream->kind == STREAM__KIND__ROW_INDEX)
 	{
-		currentDataOffset += stream->length;
 		streamNo++;
 		stream = stripeFooter->streams[streamNo];
 	}
@@ -316,8 +312,8 @@ int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformati
  *
  * @return 0 for success and -1 for failure
  */
-static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset,
-		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters)
+static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* currentDataOffset, int* streamNo,
+		StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
 	StructFieldReader *structFieldReader = NULL;
 	ListFieldReader *listFieldReader = NULL;
@@ -339,13 +335,12 @@ static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* c
 	stream = stripeFooter->streams[*streamNo];
 	fieldKind = fieldReader->kind;
 
-	fieldReader->hasPresentBitReader = stream->column == fieldReader->columnNo
-			&& stream->kind == STREAM__KIND__PRESENT;
+	fieldReader->hasPresentBitReader = stream->column == fieldReader->columnNo && stream->kind == STREAM__KIND__PRESENT;
 
 	if (fieldReader->hasPresentBitReader)
 	{
-		result = StreamReaderInit(&fieldReader->presentBitReader, TYPE__KIND__BOOLEAN, orcFileName,
-				*currentDataOffset, *currentDataOffset + stream->length, parameters);
+		result = StreamReaderInit(&fieldReader->presentBitReader, TYPE__KIND__BOOLEAN, orcFileName, *currentDataOffset,
+				*currentDataOffset + stream->length, parameters);
 
 		if (result)
 		{
@@ -371,8 +366,8 @@ static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* c
 
 		if (hasLengthStream)
 		{
-			result = StreamReaderInit(&fieldReader->lengthReader, TYPE__KIND__INT, orcFileName,
-					*currentDataOffset, *currentDataOffset + stream->length, parameters);
+			result = StreamReaderInit(&fieldReader->lengthReader, TYPE__KIND__INT, orcFileName, *currentDataOffset,
+					*currentDataOffset + stream->length, parameters);
 
 			if (result)
 			{
@@ -390,9 +385,14 @@ static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* c
 			stream = stripeFooter->streams[*streamNo];
 		}
 
-		return _FieldReaderInit(&listFieldReader->itemReader, orcFileName, currentDataOffset, streamNo,
-				stripeFooter, parameters);
-		break;
+		if (IsComplexType(listFieldReader->itemReader.kind))
+		{
+			fprintf(stderr, "List of complex types complex types are not supported\n");
+			return -1;
+		}
+
+		return _FieldReaderInit(&listFieldReader->itemReader, orcFileName, currentDataOffset, streamNo, stripeFooter,
+				parameters);
 	case TYPE__KIND__MAP:
 	case TYPE__KIND__DECIMAL:
 	case TYPE__KIND__UNION:
@@ -404,20 +404,15 @@ static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* c
 		for (fieldNo = 0; fieldNo < structFieldReader->noOfFields; fieldNo++)
 		{
 			subField = structFieldReader->fields[fieldNo];
-			if (IsComplexType(subField->kind))
-			{
-				fprintf(stderr, "Nested complex types are not supported\n");
-				return -1;
-			}
-			result = _FieldReaderInit(subField, orcFileName, currentDataOffset, streamNo, stripeFooter,
-					parameters);
+			result = _FieldReaderInit(subField, orcFileName, currentDataOffset, streamNo, stripeFooter, parameters);
 
 			if (result)
 			{
 				return -1;
 			}
 		}
-		return 0;
+
+		return (*streamNo == totalNoOfStreams) ? 0 : -1;
 	default:
 		/* these are the supported types, unsupported types are declared above */
 		primitiveFieldReader = fieldReader->fieldReader;
@@ -452,8 +447,8 @@ static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* c
 		for (dataStreamIterator = 0; dataStreamIterator < noOfDataStreams; ++dataStreamIterator)
 		{
 			streamKind = GetStreamKind(fieldKind, dataStreamIterator);
-			result = StreamReaderInit(&primitiveFieldReader->readers[dataStreamIterator], streamKind,
-					orcFileName, *currentDataOffset, *currentDataOffset + stream->length, parameters);
+			result = StreamReaderInit(&primitiveFieldReader->readers[dataStreamIterator], streamKind, orcFileName,
+					*currentDataOffset, *currentDataOffset + stream->length, parameters);
 			if (result)
 			{
 				return result;
@@ -464,7 +459,7 @@ static int _FieldReaderInit(FieldReader* fieldReader, char* orcFileName, long* c
 			stream = stripeFooter->streams[*streamNo];
 		}
 
-		return -1;
+		return 0;
 	}
 }
 

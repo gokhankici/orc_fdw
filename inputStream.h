@@ -68,11 +68,11 @@ typedef struct
 	char* tempBuffer;
 } FileStream;
 
-FileStream* CompressedFileStreamInit(char* filePath, long offset, long limit, int bufferSize,
+FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize,
 		CompressionKind kind);
-int CompressedFileStreamFree(FileStream*);
-char* CompressedFileStreamRead(FileStream*, int *length);
-int CompressedFileStreamReadRemaining(FileStream*, char** data, int* dataLength);
-int CompressedFileStreamReadByte(FileStream* stream, char* value);
+int FileStreamFree(FileStream*);
+char* FileStreamRead(FileStream*, int *length);
+int FileStreamReadRemaining(FileStream*, char** data, int* dataLength);
+int FileStreamReadByte(FileStream* stream, char* value);
 
 #endif /* INPUTSTREAM_H_ */

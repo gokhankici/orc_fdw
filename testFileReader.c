@@ -70,7 +70,7 @@ int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 			}
 
 			isNull = FieldReaderRead(fieldReader, &field, &length);
-			if (isNull)
+			if (isNull == 1)
 			{
 				fprintf(file, "(NULL)|");
 			}
@@ -240,7 +240,7 @@ int main(int argc, char **argv)
 			exit(1);
 		}
 
-//		result = printAllData(outputFile, structReader, stripe->numberofrows);
+//		result = printAllData(outputFile, fieldReader, stripe->numberofrows);
 		result = readAllData(fieldReader, stripe->numberofrows);
 		if (result)
 		{
@@ -252,6 +252,7 @@ int main(int argc, char **argv)
 	}
 
 	FieldReaderFree(fieldReader);
+
 	if (outputFile != stdout)
 		fclose(outputFile);
 

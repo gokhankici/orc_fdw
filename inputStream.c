@@ -311,7 +311,7 @@ static long FileBufferBytesLeft(FileBuffer* fileStream)
  *
  * @return NULL for failure, non-NULL for success
  */
-FileStream* CompressedFileStreamInit(char* filePath, long offset, long limit, int bufferSize,
+FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize,
 		CompressionKind kind)
 {
 	FileStream *stream = malloc(sizeof(FileStream));
@@ -352,7 +352,7 @@ FileStream* CompressedFileStreamInit(char* filePath, long offset, long limit, in
  *
  * @return 0 for success, -1 for failure
  */
-int CompressedFileStreamFree(FileStream* stream)
+int FileStreamFree(FileStream* stream)
 {
 	if (stream == NULL)
 	{
@@ -525,7 +525,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
  *
  * @return pointer to the data in the stream buffer
  */
-char* CompressedFileStreamRead(FileStream* stream, int *length)
+char* FileStreamRead(FileStream* stream, int *length)
 {
 	int requestedLength = *length;
 	int result = 0;
@@ -603,7 +603,7 @@ char* CompressedFileStreamRead(FileStream* stream, int *length)
  *
  * @return 0 for success, -1 for failure
  */
-int CompressedFileStreamReadByte(FileStream* stream, char* value)
+int FileStreamReadByte(FileStream* stream, char* value)
 {
 	int result = 0;
 
@@ -644,7 +644,7 @@ int CompressedFileStreamReadByte(FileStream* stream, char* value)
  *
  * @return 0 for success, -1 for failure
  */
-int CompressedFileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
+int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 {
 	int result = 0;
 	char* newBuffer = NULL;
