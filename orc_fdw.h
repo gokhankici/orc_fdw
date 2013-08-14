@@ -20,8 +20,9 @@
 #include "utils/hsearch.h"
 #include "nodes/pg_list.h"
 #include "nodes/relation.h"
+
 #include "orc.pb-c.h"
-#include "inputStream.h"
+#include "recordReader.h"
 
 
 /* Defines for valid option names and default values */
@@ -80,7 +81,6 @@ typedef struct OrcFdwExecState
 	uint32 nextStripeNumber;
 	StripeInformation *currentStripeInfo;
 	uint32 currentLineNumber;
-	HTAB *columnMappingHash;
 } OrcFdwExecState;
 
 

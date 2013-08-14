@@ -169,7 +169,7 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 
 int FieldReaderAllocate(FieldReader* reader, Footer* footer, char* selectedFields)
 {
-	reader->columnNo = 0;
+	reader->orcColumnNo = 0;
 	reader->hasPresentBitReader = 0;
 	reader->kind = TYPE__KIND__STRUCT;
 	reader->required = 1;
@@ -210,7 +210,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 
 		reader->fields[readerIterator] = malloc(sizeof(FieldReader));
 		field = reader->fields[readerIterator];
-		field->columnNo = root->subtypes[readerIterator];
+		field->orcColumnNo = root->subtypes[readerIterator];
 		type = types[root->subtypes[readerIterator]];
 		field->kind = type->kind;
 		field->hasPresentBitReader = 0;
@@ -228,8 +228,8 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 			listItemReader = &listReader->itemReader;
 			listItemReader->hasPresentBitReader = 0;
 			listItemReader->presentBitReader.stream = NULL;
-			listItemReader->columnNo = type->subtypes[0];
-			listItemReader->kind = types[listItemReader->columnNo]->kind;
+			listItemReader->orcColumnNo = type->subtypes[0];
+			listItemReader->kind = types[listItemReader->orcColumnNo]->kind;
 			listItemReader->required = selectedFields[readerIterator];
 
 			if (IsComplexType(listItemReader->kind))
@@ -326,7 +326,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 	stream = stripeFooter->streams[*streamNo];
 	fieldKind = fieldReader->kind;
 
-	fieldReader->hasPresentBitReader = stream->column == fieldReader->columnNo && stream->kind == STREAM__KIND__PRESENT;
+	fieldReader->hasPresentBitReader = stream->column == fieldReader->orcColumnNo && stream->kind == STREAM__KIND__PRESENT;
 
 	if (fieldReader->hasPresentBitReader)
 	{
@@ -430,7 +430,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 				primitiveFieldReader->wordLength = NULL;
 			}
 
-			columnEncoding = stripeFooter->columns[fieldReader->columnNo];
+			columnEncoding = stripeFooter->columns[fieldReader->orcColumnNo];
 
 			if (fieldReader->required)
 			{

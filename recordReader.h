@@ -85,7 +85,7 @@ typedef struct
 typedef struct
 {
 	Type__Kind kind;
-	int columnNo;
+	int orcColumnNo;
 	StreamReader presentBitReader;
 	/* Length reader for list & map complex types */
 	StreamReader lengthReader;

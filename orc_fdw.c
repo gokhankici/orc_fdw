@@ -67,18 +67,21 @@ static char * OrcGetOptionValue(Oid foreignTableId, const char *optionName);
 static double TupleCount(RelOptInfo *baserel, const char *filename);
 static BlockNumber PageCount(const char *filename);
 static List * ColumnList(RelOptInfo *baserel);
-static HTAB * ColumnMappingHash(Oid foreignTableId, List *columnList);
 static bool OrcAnalyzeForeignTable(Relation relation,
 		AcquireSampleRowsFunc *acquireSampleRowsFunc, BlockNumber *totalPageCount);
 static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
 		int targetRowCount, double *totalRowCount, double *totalDeadRowCount);
+static Datum ColumnValue(Field* field, Type__Kind kind);
 
 /**
  * Helper functions
  */
-void OrcGetNextStripe(OrcFdwExecState* execState, Footer* footer);
-static void FillTupleSlot(FieldReader* recordReader, HTAB *columnMappingHash,
-		Datum *columnValues, bool *columnNulls);
+static void OrcGetNextStripe(OrcFdwExecState* execState);
+static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
+		bool *columnNulls);
+
+static Datum ColumnValue(Field* field, Type__Kind kind);
+static Datum ColumnValueArray(Field* field, Type__Kind itemKind, int listSize);
 
 /* Declarations for dynamic loading */
 PG_MODULE_MAGIC
@@ -204,7 +207,7 @@ static StringInfo OptionNamesString(Oid currentContextId)
  * OrcGetForeignRelSize obtains relation size estimates for a foreign table and
  * puts its estimate for row count into baserel->rows.
  */
-/* FIXME Use footer here */
+/* FIXME Use footer here ? */
 static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel,
 		Oid foreignTableId)
 {
@@ -316,23 +319,66 @@ static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *exp
 
 /**
  * Iteratres to the next stripe and initializes the record reader.
+ * Returns true if there is another stripe.
  */
-void OrcGetNextStripe(OrcFdwExecState* execState)
+static void OrcGetNextStripe(OrcFdwExecState* execState)
 {
 	Footer* footer = execState->footer;
 	StripeInformation* stripeInfo = NULL;
 	StripeFooter* stripeFooter = NULL;
 
-	stripeInfo = footer->stripes[execState->nextStripeNumber];
-	execState->nextStripeNumber++;
+	if (execState->nextStripeNumber < footer->n_stripes)
+	{
+		stripeInfo = footer->stripes[execState->nextStripeNumber];
+		execState->nextStripeNumber++;
 
-	stripeFooter = StripeFooterInit(execState->filename, stripeInfo,
-			&execState->compressionParameters);
-	FieldReaderInit(execState->recordReader, execState->filename, stripeInfo,
-			stripeFooter, &execState->postScript);
+		stripeFooter = StripeFooterInit(execState->filename, stripeInfo,
+				&execState->compressionParameters);
 
-	execState->stripeFooter = stripeFooter;
-	execState->currentStripeInfo = stripeInfo;
+		FieldReaderInit(execState->recordReader, execState->filename, stripeInfo,
+				stripeFooter, &execState->compressionParameters);
+
+		if (execState->stripeFooter)
+		{
+			pfree(execState->stripeFooter);
+		}
+
+		execState->stripeFooter = stripeFooter;
+		execState->currentStripeInfo = stripeInfo;
+	}
+}
+
+static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
+{
+	FieldReader *recordReader = execState->recordReader;
+	Footer* footer = execState->footer;
+	ListCell* columnCell = NULL;
+	uint32_t columnIndex = 0;
+	Var *column = NULL;
+	AttrNumber columnId = 0;
+	char* requiredColumns = NULL;
+	Type* rootStructure = footer->types[0];
+
+	/* allocate memory for select bytes and initialize to 0 */
+	requiredColumns = palloc(rootStructure->n_subtypes);
+	memset(requiredColumns, 0, rootStructure->n_subtypes);
+
+	foreach(columnCell, columns)
+	{
+		column = (Var *) lfirst(columnCell);
+		columnId = column->varattno;
+
+		columnIndex = columnId - 1;
+		requiredColumns[columnIndex] = 1;
+	}
+
+	/* Allocate space for column readers */
+	FieldReaderAllocate(recordReader, footer, requiredColumns);
+
+	/* Use next stripe to initialize record reader */
+	OrcGetNextStripe(execState);
+
+	pfree(requiredColumns);
 }
 
 /*
@@ -349,13 +395,9 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	Oid foreignTableId = InvalidOid;
 	OrcFdwOptions *options = NULL;
 	List *columnList = NULL;
-	HTAB *columnMappingHash = NULL;
 	PostScript* postScript = NULL;
 	Footer* footer = NULL;
-	StripeFooter* stripeFooter = NULL;
-	StripeInformation *stripeInfo = NULL;
 	long postScriptOffset = 0;
-	FieldReader *recordReader = NULL;
 
 	/* if Explain with no Analyze, do nothing */
 	if (executorFlags & EXEC_FLAG_EXPLAIN_ONLY)
@@ -370,13 +412,13 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	foreignPrivateList = (List *) foreignScan->fdw_private;
 
 	columnList = (List *) linitial(foreignPrivateList);
-	columnMappingHash = ColumnMappingHash(foreignTableId, columnList);
 
 	execState = (OrcFdwExecState *) palloc(sizeof(OrcFdwExecState));
 	execState->filename = options->filename;
-	execState->columnMappingHash = columnMappingHash;
 	execState->currentLineNumber = 0;
 	execState->nextStripeNumber = 0;
+	execState->stripeFooter = NULL;
+	execState->currentStripeInfo = NULL;
 
 	postScript = PostScriptInit(options->filename, &postScriptOffset,
 			&execState->compressionParameters);
@@ -387,13 +429,10 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 			&execState->compressionParameters);
 	execState->footer = footer;
 
-	recordReader = palloc(sizeof(FieldReader));
+	execState->recordReader = palloc(sizeof(FieldReader));
 
-	/* FIXME update selected fields */
-	FieldReaderAllocate(recordReader, footer, NULL);
-	execState->recordReader = recordReader;
+	OrcInitializeFieldReader(execState, columnList);
 
-	OrcGetNextStripe(execState);
 	scanState->fdw_state = (void *) execState;
 }
 
@@ -407,10 +446,6 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 {
 	OrcFdwExecState *execState = (OrcFdwExecState *) scanState->fdw_state;
 	TupleTableSlot *tupleSlot = scanState->ss.ss_ScanTupleSlot;
-	HTAB *columnMappingHash = execState->columnMappingHash;
-	bool endOfFile = false;
-	bool jsonObjectValid = false;
-	bool errorCountExceeded = false;
 	StripeInformation* currentStripe = execState->currentStripeInfo;
 
 	TupleDesc tupleDescriptor = tupleSlot->tts_tupleDescriptor;
@@ -428,9 +463,15 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	{
 		/* End of stripe, read next one */
 		OrcGetNextStripe(execState);
+
+		if (execState->nextStripeNumber >= execState->footer->n_stripes)
+		{
+			/* finish reading if there are no more stipes left */
+			return NULL;
+		}
 	}
 
-	FillTupleSlot(execState->recordReader, columnMappingHash, columnValues, columnNulls);
+	FillTupleSlot(execState->recordReader, columnValues, columnNulls);
 	ExecStoreVirtualTuple(tupleSlot);
 
 	return tupleSlot;
@@ -456,16 +497,25 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 		return;
 	}
 
-	FieldReaderFree(executionState->recordReader);
-	pfree(executionState->recordReader);
-
-	stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
-	footer__free_unpacked(executionState->footer, NULL);
-	post_script__free_unpacked(executionState->postScript, NULL);
-
-	if (executionState->columnMappingHash != NULL)
+	if (executionState->recordReader)
 	{
-		hash_destroy(executionState->columnMappingHash);
+		FieldReaderFree(executionState->recordReader);
+		pfree(executionState->recordReader);
+	}
+
+	if (executionState->stripeFooter)
+	{
+		stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
+	}
+
+	if (executionState->footer)
+	{
+		footer__free_unpacked(executionState->footer, NULL);
+	}
+
+	if (executionState->postScript)
+	{
+		post_script__free_unpacked(executionState->postScript, NULL);
 	}
 
 	pfree(executionState);
@@ -480,8 +530,6 @@ OrcGetOptions(Oid foreignTableId)
 {
 	OrcFdwOptions *jsonFdwOptions = NULL;
 	char *filename = NULL;
-	int32 maxErrorCount = 0;
-	char *maxErrorCountString = NULL;
 
 	filename = OrcGetOptionValue(foreignTableId, OPTION_NAME_FILENAME);
 
@@ -531,39 +579,39 @@ static double TupleCount(RelOptInfo *baserel, const char *filename)
 {
 	double tupleCount = 0.0;
 
-//	BlockNumber pageCountEstimate = baserel->pages;
-//	if (pageCountEstimate > 0)
-//	{
-//		/*
-//		 * We have number of pages and number of tuples from pg_class (from a
-//		 * previous Analyze), so compute a tuples-per-page estimate and scale
-//		 * that by the current file size.
-//		 */
-//		double density = baserel->tuples / (double) pageCountEstimate;
-//		BlockNumber pageCount = PageCount(filename);
-//
-//		tupleCount = clamp_row_est(density * (double) pageCount);
-//	}
-//	else
-//	{
-//		/*
-//		 * Otherwise we have to fake it. We back into this estimate using the
-//		 * planner's idea of relation width, which may be inaccurate. For better
-//		 * estimates, users need to run Analyze.
-//		 */
-//		struct stat statBuffer;
-//		int tupleWidth = 0;
-//
-//		int statResult = stat(filename, &statBuffer);
-//		if (statResult < 0)
-//		{
-//			/* file may not be there at plan time, so use a default estimate */
-//			statBuffer.st_size = 10 * BLCKSZ;
-//		}
-//
-//		tupleWidth = MAXALIGN(baserel->width) + MAXALIGN(sizeof(HeapTupleHeaderData));
-//		tupleCount = clamp_row_est((double) statBuffer.st_size / (double) tupleWidth);
-//	}
+	BlockNumber pageCountEstimate = baserel->pages;
+	if (pageCountEstimate > 0)
+	{
+		/*
+		 * We have number of pages and number of tuples from pg_class (from a
+		 * previous Analyze), so compute a tuples-per-page estimate and scale
+		 * that by the current file size.
+		 */
+		double density = baserel->tuples / (double) pageCountEstimate;
+		BlockNumber pageCount = PageCount(filename);
+
+		tupleCount = clamp_row_est(density * (double) pageCount);
+	}
+	else
+	{
+		/*
+		 * Otherwise we have to fake it. We back into this estimate using the
+		 * planner's idea of relation width, which may be inaccurate. For better
+		 * estimates, users need to run Analyze.
+		 */
+		struct stat statBuffer;
+		int tupleWidth = 0;
+
+		int statResult = stat(filename, &statBuffer);
+		if (statResult < 0)
+		{
+			/* file may not be there at plan time, so use a default estimate */
+			statBuffer.st_size = 10 * BLCKSZ;
+		}
+
+		tupleWidth = MAXALIGN(baserel->width) + MAXALIGN(sizeof(HeapTupleHeaderData));
+		tupleCount = clamp_row_est((double) statBuffer.st_size / (double) tupleWidth);
+	}
 
 	return tupleCount;
 }
@@ -650,265 +698,52 @@ ColumnList(RelOptInfo *baserel)
 	return columnList;
 }
 
-/*
- * ColumnMappingHash creates a hash table that maps column names to column index
- * and types. This table helps us quickly translate JSON document key/values to
- * corresponding PostgreSQL columns. This function is unchanged from mongo_fdw.
- */
-static HTAB *
-ColumnMappingHash(Oid foreignTableId, List *columnList)
+static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
+		bool *columnNulls)
 {
-	HTAB *columnMappingHash = NULL;
-	ListCell *columnCell = NULL;
-	const long hashTableSize = 2048;
+	FieldReader* fieldReader = NULL;
+	StructFieldReader* structFieldReader = NULL;
+	ListFieldReader* listFieldReader = NULL;
+	int columnNo = 0;
+	Field field;
+	int length = 0;
+	int isNull = 0;
 
-	/* create hash table */
-	HASHCTL hashInfo;
-	memset(&hashInfo, 0, sizeof(hashInfo));
-	hashInfo.keysize = NAMEDATALEN;
-	hashInfo.entrysize = sizeof(ColumnMapping);
-	hashInfo.hash = string_hash;
-	hashInfo.hcxt = CurrentMemoryContext;
+	structFieldReader = (StructFieldReader*) recordReader->fieldReader;
 
-	columnMappingHash = hash_create("Column Mapping Hash", hashTableSize, &hashInfo,
-			(HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT));
-	Assert(columnMappingHash != NULL);
-
-	foreach(columnCell, columnList)
+	for (columnNo = 0; columnNo < structFieldReader->noOfFields; ++columnNo)
 	{
-		Var *column = (Var *) lfirst(columnCell);
-		AttrNumber columnId = column->varattno;
-
-		ColumnMapping *columnMapping = NULL;
-		char *columnName = NULL;
-		bool handleFound = false;
-		void *hashKey = NULL;
-
-		columnName = get_relid_attribute_name(foreignTableId, columnId);
-		hashKey = (void *) columnName;
-
-		columnMapping = (ColumnMapping *) hash_search(columnMappingHash, hashKey,
-				HASH_ENTER, &handleFound);
-		Assert(columnMapping != NULL);
-
-		columnMapping->columnIndex = columnId - 1;
-		columnMapping->columnTypeId = column->vartype;
-		columnMapping->columnTypeMod = column->vartypmod;
-		columnMapping->columnArrayTypeId = get_element_type(column->vartype);
-	}
-
-	return columnMappingHash;
-}
-
-static void FillTupleSlot(FieldReader* recordReader, HTAB *columnMappingHash,
-		Datum *columnValues, bool *columnNulls)
-{
-	uint32 jsonKeyCount = jsonObject->u.object.len;
-	const char **jsonKeyArray = jsonObject->u.object.keys;
-	yajl_val *jsonValueArray = jsonObject->u.object.values;
-	uint32 jsonKeyIndex = 0;
-
-	/* loop over key/value pairs of the json object */
-	for (jsonKeyIndex = 0; jsonKeyIndex < jsonKeyCount; jsonKeyIndex++)
-	{
-		const char *jsonKey = jsonKeyArray[jsonKeyIndex];
-		yajl_val jsonValue = jsonValueArray[jsonKeyIndex];
-
-		ColumnMapping *columnMapping = NULL;
-		Oid columnTypeId = InvalidOid;
-		Oid columnArrayTypeId = InvalidOid;
-		Oid columnTypeMod = InvalidOid;
-		bool compatibleTypes = false;
-		bool handleFound = false;
-		const char *jsonFullKey = NULL;
-		void *hashKey = NULL;
-
-		if (jsonObjectKey != NULL)
-		{
-			/*
-			 * For fields in nested json objects, we use fully qualified field
-			 * name to check the column mapping.
-			 */
-			StringInfo jsonFullKeyString = makeStringInfo();
-			appendStringInfo(jsonFullKeyString, "%s.%s", jsonObjectKey, jsonKey);
-			jsonFullKey = jsonFullKeyString->data;
-		}
-		else
-		{
-			jsonFullKey = jsonKey;
-		}
-
-		/* recurse into nested objects */
-		if (YAJL_IS_OBJECT(jsonValue))
-		{
-			FillTupleSlot(jsonValue, jsonFullKey, columnMappingHash, columnValues,
-					columnNulls);
-			continue;
-		}
-
-		/* look up the corresponding column for this json key */
-		hashKey = (void *) jsonFullKey;
-		columnMapping = (ColumnMapping *) hash_search(columnMappingHash, hashKey,
-				HASH_FIND, &handleFound);
-
-		/* if no corresponding column or null json value, continue */
-		if (columnMapping == NULL || YAJL_IS_NULL(jsonValue))
+		fieldReader = structFieldReader->fields[columnNo];
+		if (!fieldReader->required)
 		{
 			continue;
 		}
 
-		/* check if columns have compatible types */
-		columnTypeId = columnMapping->columnTypeId;
-		columnArrayTypeId = columnMapping->columnArrayTypeId;
-		columnTypeMod = columnMapping->columnTypeMod;
-
-		if (OidIsValid(columnArrayTypeId))
+		isNull = FieldReaderRead(fieldReader, &field, &length);
+		if (isNull == 0 && fieldReader->kind == TYPE__KIND__LIST)
 		{
-			compatibleTypes = YAJL_IS_ARRAY(jsonValue);
-		}
-		else
-		{
-			compatibleTypes = ColumnTypesCompatible(jsonValue, columnTypeId);
+			free(field.list);
+			free(field.isItemNull);
+			free(field.listItemSizes);
 		}
 
-		/* if types are incompatible, leave this column null */
-		if (!compatibleTypes)
+		if (!isNull)
 		{
-			continue;
-		}
-
-		/* fill in corresponding column value and null flag */
-		if (OidIsValid(columnArrayTypeId))
-		{
-			uint32 columnIndex = columnMapping->columnIndex;
-			columnValues[columnIndex] = ColumnValueArray(jsonValue, columnArrayTypeId,
-					columnTypeMod);
-			columnNulls[columnIndex] = false;
-		}
-		else
-		{
-			uint32 columnIndex = columnMapping->columnIndex;
-			columnValues[columnIndex] = ColumnValue(jsonValue, columnTypeId,
-					columnTypeMod);
-			columnNulls[columnIndex] = false;
-		}
-	}
-}
-
-/*
- * ColumnTypesCompatible checks if the given json value can be converted to the
- * given PostgreSQL type.
- */
-static bool ColumnTypesCompatible(yajl_val jsonValue, Oid columnTypeId)
-{
-	bool compatibleTypes = false;
-
-	/* we consider the PostgreSQL column type as authoritative */
-	switch (columnTypeId)
-	{
-	case INT2OID:
-	case INT4OID:
-	case INT8OID:
-	case FLOAT4OID:
-	case FLOAT8OID:
-	case NUMERICOID:
-	{
-		if (YAJL_IS_NUMBER(jsonValue))
-		{
-			compatibleTypes = true;
-		}
-		break;
-	}
-	case BOOLOID:
-	{
-		if (YAJL_IS_TRUE(jsonValue) || YAJL_IS_FALSE(jsonValue))
-		{
-			compatibleTypes = true;
-		}
-		break;
-	}
-	case BPCHAROID:
-	case VARCHAROID:
-	case TEXTOID:
-	{
-		if (YAJL_IS_STRING(jsonValue))
-		{
-			compatibleTypes = true;
-		}
-		break;
-	}
-	case DATEOID:
-	case TIMESTAMPOID:
-	case TIMESTAMPTZOID:
-	{
-		if (YAJL_IS_STRING(jsonValue))
-		{
-			const char *stringValue = (char *) YAJL_GET_STRING(jsonValue);
-
-			bool validDateTimeFormat = ValidDateTimeFormat(stringValue);
-			if (validDateTimeFormat)
+			if (fieldReader)
 			{
-				compatibleTypes = true;
+				listFieldReader = (ListFieldReader*) fieldReader->fieldReader;
+				columnValues[columnNo] = ColumnValueArray(field,
+						listFieldReader->itemReader.kind, length);
+				columnNulls[columnNo] = false;
 			}
-		}
-		break;
-	}
-	default:
-	{
-		/*
-		 * We currently error out on other data types. Some types such as
-		 * byte arrays are easy to add, but they need testing. Other types
-		 * such as money or inet, do not have equivalents in JSON.
-		 */
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert json type to column type"), errhint("column type: %u", (uint32) columnTypeId)));
-		break;
-	}
-	}
-
-	return compatibleTypes;
-}
-
-/*
- * ValidDateTimeFormat checks if the given dateTimeString can be parsed and decoded
- * as a date/timestamp. The algorithm used here is based on date_in, timestamp_in,
- * and timestamptz_in functions.
- */
-static bool ValidDateTimeFormat(const char *dateTimeString)
-{
-	bool validDateTimeFormat = false;
-	char workBuffer[MAXDATELEN + 1];
-	char *fieldArray[MAXDATEFIELDS];
-	int fieldTypeArray[MAXDATEFIELDS];
-	int fieldCount = 0;
-
-	int parseError = ParseDateTime(dateTimeString, workBuffer, sizeof(workBuffer),
-			fieldArray, fieldTypeArray,
-			MAXDATEFIELDS, &fieldCount);
-	if (parseError == 0)
-	{
-		int dateType = 0;
-		struct pg_tm dateTime;
-		fsec_t fractionalSecond = 0;
-		int timezone = 0;
-
-		int decodeError = DecodeDateTime(fieldArray, fieldTypeArray, fieldCount,
-				&dateType, &dateTime, &fractionalSecond, &timezone);
-		if (decodeError == 0)
-		{
-			/*
-			 * We only accept DTK_DATE, DTK_EPOCH, DTK_LATE, and DTK_EARLY date
-			 * types. For other date types, input functions raise an error.
-			 */
-			if (dateType == DTK_DATE || dateType == DTK_EPOCH || dateType == DTK_LATE
-					|| dateType == DTK_EARLY)
+			else
 			{
-				validDateTimeFormat = true;
+				columnValues[columnNo] = ColumnValue(&field, fieldReader->kind);
+				columnNulls[columnNo] = false;
 			}
 		}
 	}
 
-	return validDateTimeFormat;
 }
 
 /*
@@ -918,33 +753,26 @@ static bool ValidDateTimeFormat(const char *dateTimeString)
  * datum from element datums, and returns the array datum. This function ignores
  * values that aren't type compatible with valueTypeId.
  */
-static Datum ColumnValueArray(yajl_val jsonArray, Oid valueTypeId, Oid valueTypeMod)
+static Datum ColumnValueArray(Field* field, Type__Kind itemKind, int listSize)
 {
 	Datum columnValueDatum = 0;
 	ArrayType *columnValueObject = NULL;
 	bool typeByValue = false;
 	char typeAlignment = 0;
 	int16 typeLength = 0;
-
-	uint32 jsonValueCount = jsonArray->u.array.len;
-	yajl_val *jsonValueArray = jsonArray->u.array.values;
+	uint32 itemIndex = 0;
+	Field* itemField = NULL;
 
 	/* allocate enough room for datum array's maximum possible size */
-	Datum *datumArray = palloc0(jsonValueCount * sizeof(Datum));
+	Datum *datumArray = palloc0(listSize * sizeof(Datum));
 	uint32 datumArraySize = 0;
 
-	uint32 jsonValueIndex = 0;
-	for (jsonValueIndex = 0; jsonValueIndex < jsonValueCount; jsonValueIndex++)
+	for (itemIndex = 0; itemIndex < listSize; itemIndex++)
 	{
-		yajl_val jsonValue = jsonValueArray[jsonValueIndex];
+		itemField = &field->list[itemIndex];
 
-		bool compatibleTypes = ColumnTypesCompatible(jsonValue, valueTypeId);
-		if (compatibleTypes)
-		{
-			datumArray[datumArraySize] = ColumnValue(jsonValue, valueTypeId,
-					valueTypeMod);
-			datumArraySize++;
-		}
+		datumArray[datumArraySize] = ColumnValue(itemField, itemKind);
+		datumArraySize++;
 	}
 
 	get_typlenbyvalalign(valueTypeId, &typeLength, &typeByValue, &typeAlignment);
@@ -960,105 +788,57 @@ static Datum ColumnValueArray(yajl_val jsonArray, Oid valueTypeId, Oid valueType
  * by jsonValue, and converts this value to the corresponding PostgreSQL datum.
  * The function then returns this datum.
  */
-static Datum ColumnValue(Field* field, Oid columnTypeId, int32 columnTypeMod)
+static Datum ColumnValue(Field* field, Type__Kind kind)
 {
 	Datum columnValue = 0;
 
-	switch (columnTypeId)
+	switch (kind)
 	{
-	case INT2OID:
+	case TYPE__KIND__SHORT:
 	{
-		const char *value = YAJL_GET_NUMBER(jsonValue);
-		columnValue = DirectFunctionCall1(int2in, CStringGetDatum(value));
-//		PG_RETURN_INT16(field->)
+		columnValue = Int16GetDatum(field->value.value64);
 		break;
 	}
-	case INT4OID:
+	case TYPE__KIND__INT:
 	{
-		const char *value = YAJL_GET_NUMBER(jsonValue);
-		columnValue = DirectFunctionCall1(int4in, CStringGetDatum(value));
+		columnValue = Int32GetDatum(field->value.value64);
 		break;
 	}
-	case INT8OID:
+	case TYPE__KIND__LONG:
 	{
-		const char *value = YAJL_GET_NUMBER(jsonValue);
-		columnValue = DirectFunctionCall1(int8in, CStringGetDatum(value));
+		columnValue = Int64GetDatum(field->value.value64);
 		break;
 	}
-	case FLOAT4OID:
+	case TYPE__KIND__FLOAT:
 	{
-		const char *value = YAJL_GET_NUMBER(jsonValue);
-		columnValue = DirectFunctionCall1(float4in, CStringGetDatum(value));
+		columnValue = Float4GetDatum(field->value.floatValue);
 		break;
 	}
-	case FLOAT8OID:
+	case TYPE__KIND__DOUBLE:
 	{
-		const char *value = YAJL_GET_NUMBER(jsonValue);
-		columnValue = DirectFunctionCall1(float8in, CStringGetDatum(value));
+		columnValue = Float8GetDatum(field->value.doubleValue);
 		break;
 	}
-	case NUMERICOID:
+	case TYPE__KIND__BOOLEAN:
 	{
-		const char *value = YAJL_GET_NUMBER(jsonValue);
-		columnValue = DirectFunctionCall3(numeric_in, CStringGetDatum(value),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(columnTypeMod));
+		columnValue = BoolGetDatum(field->value.value8);
 		break;
 	}
-	case BOOLOID:
+	case TYPE__KIND__STRING:
 	{
-		bool value = YAJL_IS_TRUE(jsonValue);
-		columnValue = BoolGetDatum(value);
+		columnValue = CStringGetDatum(field->value.binary);
 		break;
 	}
-	case BPCHAROID:
+	case TYPE__KIND__TIMESTAMP:
 	{
-		const char *value = YAJL_GET_STRING(jsonValue);
-		columnValue = DirectFunctionCall3(bpcharin, CStringGetDatum(value),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(columnTypeMod));
-		break;
-	}
-	case VARCHAROID:
-	{
-		const char *value = YAJL_GET_STRING(jsonValue);
-		columnValue = DirectFunctionCall3(varcharin, CStringGetDatum(value),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(columnTypeMod));
-		break;
-	}
-	case TEXTOID:
-	{
-		const char *value = YAJL_GET_STRING(jsonValue);
-		columnValue = CStringGetTextDatum(value);
-		break;
-	}
-	case DATEOID:
-	{
-		const char *value = YAJL_GET_STRING(jsonValue);
-		columnValue = DirectFunctionCall1(date_in, CStringGetDatum(value));
-		break;
-	}
-	case TIMESTAMPOID:
-	{
-		const char *value = YAJL_GET_STRING(jsonValue);
-		columnValue = DirectFunctionCall3(timestamp_in, CStringGetDatum(value),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(columnTypeMod));
-		break;
-	}
-	case TIMESTAMPTZOID:
-	{
-		const char *value = YAJL_GET_STRING(jsonValue);
-		columnValue = DirectFunctionCall3(timestamptz_in, CStringGetDatum(value),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(columnTypeMod));
+		ereport(ERROR,
+				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert to column type")));
 		break;
 	}
 	default:
 	{
 		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert json type to column type"), errhint("column type: %u", (uint32) columnTypeId)));
+				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert to column type")));
 		break;
 	}
 	}
