@@ -74,7 +74,7 @@ message StripeFooter {
   repeated ColumnEncoding columns = 2;
 }
 
-message Type {
+message FieldType {
   enum Kind {
     BOOLEAN = 0;
     BYTE = 1;
@@ -114,7 +114,7 @@ message Footer {
   optional uint64 headerLength = 1;
   optional uint64 contentLength = 2;
   repeated StripeInformation stripes = 3;
-  repeated Type types = 4;
+  repeated FieldType types = 4;
   repeated UserMetadataItem metadata = 5;
   optional uint64 numberOfRows = 6;
   repeated ColumnStatistics statistics = 7;

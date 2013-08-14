@@ -1,11 +1,43 @@
-#include <zlib.h>
+#include "postgres.h"
+#include <stdio.h>
+#include <sys/stat.h>
+#include "access/reloptions.h"
+#include "catalog/pg_foreign_table.h"
+#include "catalog/pg_type.h"
+#include "commands/defrem.h"
+#include "commands/explain.h"
+#include "commands/vacuum.h"
+#include "foreign/fdwapi.h"
+#include "foreign/foreign.h"
+#include "miscadmin.h"
+#include "nodes/makefuncs.h"
+#include "optimizer/cost.h"
+#include "optimizer/plancat.h"
+#include "optimizer/pathnode.h"
+#include "optimizer/planmain.h"
+#include "optimizer/restrictinfo.h"
+#include "optimizer/var.h"
+#include "port.h"
+#include "storage/fd.h"
+#include "utils/array.h"
+#include "utils/builtins.h"
+#include "utils/date.h"
+#include "utils/datetime.h"
+#include "utils/int8.h"
+#include "utils/timestamp.h"
+#include "utils/hsearch.h"
+#include "utils/lsyscache.h"
+#include "utils/memutils.h"
+#include "utils/rel.h"
+
 #include "orc.pb-c.h"
 #include "fileReader.h"
 #include "recordReader.h"
 #include "inputStream.h"
 #include "util.h"
+#include "storage/fd.h"
 
-static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields);
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, PostgresQueryInfo* query);
 
 /**
  * Reads the postscript from the orc file and returns the postscript. Stores its offset to parameter.
@@ -167,18 +199,18 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 	return stripeFooter;
 }
 
-int FieldReaderAllocate(FieldReader* reader, Footer* footer, char* selectedFields)
+int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* query)
 {
 	reader->orcColumnNo = 0;
 	reader->hasPresentBitReader = 0;
-	reader->kind = TYPE__KIND__STRUCT;
+	reader->kind = FIELD_TYPE__KIND__STRUCT;
 	reader->required = 1;
 
 	reader->presentBitReader.stream = NULL;
 	reader->lengthReader.stream = NULL;
 
 	reader->fieldReader = malloc(sizeof(StructFieldReader));
-	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, selectedFields);
+	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, query);
 }
 
 /**
@@ -190,17 +222,19 @@ int FieldReaderAllocate(FieldReader* reader, Footer* footer, char* selectedField
  *
  * @return 0 for success and -1 for failure
  */
-static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, char* selectedFields)
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, PostgresQueryInfo* query)
 {
-	Type** types = footer->types;
-	Type* root = footer->types[0];
-	Type* type = NULL;
+	FieldType** types = footer->types;
+	FieldType* root = footer->types[0];
+	FieldType* type = NULL;
 	PrimitiveFieldReader* primitiveReader = NULL;
 	ListFieldReader* listReader = NULL;
 	FieldReader* field = NULL;
 	FieldReader* listItemReader = NULL;
 	int readerIterator = 0;
 	int streamIterator = 0;
+	PostgresColumnInfo* requestedColumns = query->selectedColumns;
+	int queryColumnIterator = 0;
 
 	reader->noOfFields = root->n_subtypes;
 	reader->fields = malloc(sizeof(FieldReader*) * reader->noOfFields);
@@ -216,54 +250,75 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 		field->hasPresentBitReader = 0;
 		field->presentBitReader.stream = NULL;
 		field->lengthReader.stream = NULL;
-		field->required = selectedFields[readerIterator];
 
-		if (field->kind == TYPE__KIND__LIST)
+		if (queryColumnIterator >= query->noOfSelectedColumns)
 		{
-			field->fieldReader = malloc(sizeof(ListFieldReader));
+			return -1;
+		}
 
-			listReader = field->fieldReader;
+		if (requestedColumns[queryColumnIterator].columnIndex == readerIterator)
+		{
+			/* requested columns are sorted according to their index */
+			field->required = 1;
+			field->psqlKind = requestedColumns[queryColumnIterator].columnTypeId;
 
-			/* initialize list item reader */
-			listItemReader = &listReader->itemReader;
-			listItemReader->hasPresentBitReader = 0;
-			listItemReader->presentBitReader.stream = NULL;
-			listItemReader->orcColumnNo = type->subtypes[0];
-			listItemReader->kind = types[listItemReader->orcColumnNo]->kind;
-			listItemReader->required = selectedFields[readerIterator];
-
-			if (IsComplexType(listItemReader->kind))
+			if (field->kind == FIELD_TYPE__KIND__LIST)
 			{
-				/* only list of primitive types is supported */
+				field->fieldReader = malloc(sizeof(ListFieldReader));
+
+				listReader = field->fieldReader;
+
+				/* initialize list item reader */
+				listItemReader = &listReader->itemReader;
+				listItemReader->required = 1;
+				listItemReader->psqlKind = requestedColumns[queryColumnIterator].columnArrayTypeId;
+
+				listItemReader->hasPresentBitReader = 0;
+				listItemReader->presentBitReader.stream = NULL;
+				listItemReader->orcColumnNo = type->subtypes[0];
+				listItemReader->kind = types[listItemReader->orcColumnNo]->kind;
+
+				if (IsComplexType(listItemReader->kind))
+				{
+					/* only list of primitive types is supported */
+					return -1;
+				}
+
+				listItemReader->fieldReader = malloc(sizeof(PrimitiveFieldReader));
+				primitiveReader = listItemReader->fieldReader;
+
+				for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
+				{
+					primitiveReader->readers[streamIterator].stream = NULL;
+				}
+			}
+			else if (field->kind == FIELD_TYPE__KIND__STRUCT || field->kind == FIELD_TYPE__KIND__MAP)
+			{
+				/* struct and map fields are not supported */
 				return -1;
 			}
-
-			listItemReader->fieldReader = malloc(sizeof(PrimitiveFieldReader));
-			primitiveReader = listItemReader->fieldReader;
-
-			for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
+			else
 			{
-				primitiveReader->readers[streamIterator].stream = NULL;
+				field->fieldReader = malloc(sizeof(PrimitiveFieldReader));
+
+				primitiveReader = field->fieldReader;
+				primitiveReader->dictionary = NULL;
+				primitiveReader->dictionarySize = 0;
+				primitiveReader->wordLength = NULL;
+
+				for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
+				{
+					primitiveReader->readers[streamIterator].stream = NULL;
+				}
 			}
-		}
-		else if (field->kind == TYPE__KIND__STRUCT || field->kind == TYPE__KIND__MAP)
-		{
-			/* struct and map fields are not supported */
-			return -1;
+
+			queryColumnIterator++;
 		}
 		else
 		{
-			field->fieldReader = malloc(sizeof(PrimitiveFieldReader));
-
-			primitiveReader = field->fieldReader;
-			primitiveReader->dictionary = NULL;
-			primitiveReader->dictionarySize = 0;
-			primitiveReader->wordLength = NULL;
-
-			for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
-			{
-				primitiveReader->readers[streamIterator].stream = NULL;
-			}
+			field->required = 0;
+			field->psqlKind = -1;
+			field->fieldReader = NULL;
 		}
 	}
 
@@ -312,8 +367,8 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 	PrimitiveFieldReader *primitiveFieldReader = NULL;
 	FieldReader* subField = NULL;
 	Stream* stream = NULL;
-	Type__Kind fieldKind = 0;
-	Type__Kind streamKind = 0;
+	FieldType__Kind fieldKind = 0;
+	FieldType__Kind streamKind = 0;
 	ColumnEncoding *columnEncoding = NULL;
 	int fieldNo = 0;
 	int noOfDataStreams = 0;
@@ -326,13 +381,14 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 	stream = stripeFooter->streams[*streamNo];
 	fieldKind = fieldReader->kind;
 
-	fieldReader->hasPresentBitReader = stream->column == fieldReader->orcColumnNo && stream->kind == STREAM__KIND__PRESENT;
+	fieldReader->hasPresentBitReader = stream->column == fieldReader->orcColumnNo
+			&& stream->kind == STREAM__KIND__PRESENT;
 
 	if (fieldReader->hasPresentBitReader)
 	{
 		if (fieldReader->required)
 		{
-			result = StreamReaderInit(&fieldReader->presentBitReader, TYPE__KIND__BOOLEAN, orcFileName,
+			result = StreamReaderInit(&fieldReader->presentBitReader, FIELD_TYPE__KIND__BOOLEAN, orcFileName,
 					*currentDataOffset, *currentDataOffset + stream->length, parameters);
 		}
 		else
@@ -358,13 +414,13 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 
 	switch (fieldKind)
 	{
-	case TYPE__KIND__LIST:
+	case FIELD_TYPE__KIND__LIST:
 		listFieldReader = fieldReader->fieldReader;
 
 		if (fieldReader->required)
 		{
-			result = StreamReaderInit(&fieldReader->lengthReader, TYPE__KIND__INT, orcFileName, *currentDataOffset,
-					*currentDataOffset + stream->length, parameters);
+			result = StreamReaderInit(&fieldReader->lengthReader, FIELD_TYPE__KIND__INT, orcFileName,
+					*currentDataOffset, *currentDataOffset + stream->length, parameters);
 		}
 
 		if (result)
@@ -390,13 +446,13 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 
 		return FieldReaderInitHelper(&listFieldReader->itemReader, orcFileName, currentDataOffset, streamNo,
 				stripeFooter, parameters);
-	case TYPE__KIND__MAP:
-	case TYPE__KIND__DECIMAL:
-	case TYPE__KIND__UNION:
+	case FIELD_TYPE__KIND__MAP:
+	case FIELD_TYPE__KIND__DECIMAL:
+	case FIELD_TYPE__KIND__UNION:
 		/* these are not supported yet */
 		fprintf(stderr, "Use of not supported type. Type id: %d\n", fieldKind);
 		return -1;
-	case TYPE__KIND__STRUCT:
+	case FIELD_TYPE__KIND__STRUCT:
 		structFieldReader = fieldReader->fieldReader;
 		for (fieldNo = 0; fieldNo < structFieldReader->noOfFields; fieldNo++)
 		{
@@ -415,7 +471,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 		/* these are the supported types, unsupported types are declared above */
 		primitiveFieldReader = fieldReader->fieldReader;
 
-		if (fieldReader->kind == TYPE__KIND__STRING)
+		if (fieldReader->kind == FIELD_TYPE__KIND__STRING)
 		{
 			if (primitiveFieldReader->dictionary)
 			{

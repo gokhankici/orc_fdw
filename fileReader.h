@@ -7,17 +7,28 @@
 #include "recordReader.h"
 #include "util.h"
 
+typedef struct
+{
+	uint32_t columnIndex;
+	uint32_t columnTypeId;
+	uint32_t columnArrayTypeId;
+} PostgresColumnInfo;
+
+typedef struct
+{
+	PostgresColumnInfo* selectedColumns;
+	int noOfSelectedColumns;
+} PostgresQueryInfo;
+
 PostScript* PostScriptInit(char* orcFileName, long* postScriptSizeOffset, CompressionParameters* parameters);
 
-Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize,
+Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, CompressionParameters* parameters);
+
+StripeFooter* StripeFooterInit(char* orcFile, StripeInformation* stripeInfo, CompressionParameters* parameters);
+
+int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* query);
+
+int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformation* stripe, StripeFooter* stripeFooter,
 		CompressionParameters* parameters);
-
-StripeFooter* StripeFooterInit(char* orcFile, StripeInformation* stripeInfo,
-		CompressionParameters* parameters);
-
-int FieldReaderAllocate(FieldReader* reader, Footer* footer, char* selectedFields);
-
-int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformation* stripe,
-		StripeFooter* stripeFooter, CompressionParameters* parameters);
 
 #endif /* FILEREADER_H_ */

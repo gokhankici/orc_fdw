@@ -168,7 +168,7 @@ static int ByteReaderInit(StreamReader* byteState)
  *
  * @return 0 for success, -1 for failure
  */
-static int IntegerReaderInit(Type__Kind kind, StreamReader* intState)
+static int IntegerReaderInit(FieldType__Kind kind, StreamReader* intState)
 {
 	char type = 0;
 	int bytesRead = 0;
@@ -236,7 +236,7 @@ int StreamReaderFree(StreamReader* streamReader)
  *
  * @return 0 for success, 1 for failure
  */
-int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset, long limit,
+int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, char* fileName, long offset, long limit,
 		CompressionParameters* parameters)
 {
 
@@ -255,17 +255,17 @@ int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fi
 
 	switch (streamKind)
 	{
-	case TYPE__KIND__BOOLEAN:
+	case FIELD_TYPE__KIND__BOOLEAN:
 		return BooleanReaderInit(streamReader);
-	case TYPE__KIND__BYTE:
+	case FIELD_TYPE__KIND__BYTE:
 		return ByteReaderInit(streamReader);
-	case TYPE__KIND__SHORT:
-	case TYPE__KIND__INT:
-	case TYPE__KIND__LONG:
+	case FIELD_TYPE__KIND__SHORT:
+	case FIELD_TYPE__KIND__INT:
+	case FIELD_TYPE__KIND__LONG:
 		return IntegerReaderInit(streamKind, streamReader);
-	case TYPE__KIND__FLOAT:
-	case TYPE__KIND__DOUBLE:
-	case TYPE__KIND__BINARY:
+	case FIELD_TYPE__KIND__FLOAT:
+	case FIELD_TYPE__KIND__DOUBLE:
+	case FIELD_TYPE__KIND__BINARY:
 		/* no need for initializer */
 		return 0;
 	default:
@@ -369,7 +369,7 @@ static int ReadByte(StreamReader* byteReaderState, uint8_t *result)
  *
  * @return 0 for success, -1 for failure
  */
-static int ReadInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *result)
+static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState, uint64_t *result)
 {
 	int bytesRead = 0;
 	char step = 0;
@@ -405,9 +405,9 @@ static int ReadInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 		*result = data;
 		switch (kind)
 		{
-		case TYPE__KIND__SHORT:
-		case TYPE__KIND__INT:
-		case TYPE__KIND__LONG:
+		case FIELD_TYPE__KIND__SHORT:
+		case FIELD_TYPE__KIND__INT:
+		case FIELD_TYPE__KIND__LONG:
 			intReaderState->data = ToUnsignedInteger(
 					ToSignedInteger(data) + step);
 			break;
@@ -536,35 +536,35 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 
 	switch (fieldReader->kind)
 	{
-	case TYPE__KIND__BOOLEAN:
-		booleanStreamReader = &primitiveReader->readers[DATA];
+	case FIELD_TYPE__KIND__BOOLEAN:
+		booleanStreamReader = &primitiveReader->readers[DATA_STREAM];
 		value->value8 = ReadBoolean(booleanStreamReader);
 		result = value->value8 < 0 ? -1 : 0;
 		break;
-	case TYPE__KIND__SHORT:
-	case TYPE__KIND__INT:
-	case TYPE__KIND__LONG:
-		integerStreamReader = &primitiveReader->readers[DATA];
+	case FIELD_TYPE__KIND__SHORT:
+	case FIELD_TYPE__KIND__INT:
+	case FIELD_TYPE__KIND__LONG:
+		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadInteger(fieldReader->kind, integerStreamReader, &data64);
 		value->value64 = ToSignedInteger(data64);
 		break;
-	case TYPE__KIND__FLOAT:
-		fpStreamReader = &primitiveReader->readers[DATA];
+	case FIELD_TYPE__KIND__FLOAT:
+		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadFloat(fpStreamReader, &value->floatValue);
 		break;
-	case TYPE__KIND__DOUBLE:
-		fpStreamReader = &primitiveReader->readers[DATA];
+	case FIELD_TYPE__KIND__DOUBLE:
+		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadDouble(fpStreamReader, &value->doubleValue);
 		break;
-	case TYPE__KIND__STRING:
+	case FIELD_TYPE__KIND__STRING:
 		if (primitiveReader->dictionary == NULL)
 		{
 			/* if dictionary is NULL, read the whole dictionary to the memory */
 			primitiveReader->dictionary = malloc(sizeof(char*) * primitiveReader->dictionarySize);
 			primitiveReader->wordLength = malloc(sizeof(int) * primitiveReader->dictionarySize);
 
-			integerStreamReader = &primitiveReader->readers[LENGTH];
-			binaryReader = &primitiveReader->readers[DICTIONARY_DATA];
+			integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
+			binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
 
 			/* read the dictionary */
 			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize; ++dictionaryIterator)
@@ -589,18 +589,18 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 			}
 		}
 
-		integerStreamReader = &primitiveReader->readers[DATA];
+		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadInteger(fieldReader->kind, integerStreamReader, &index);
 		value->binary = primitiveReader->dictionary[index];
 //		value->binary = primitiveReader->dictionary + primitiveReader->wordLength[index];
 		break;
-	case TYPE__KIND__BYTE:
-		byteStreamReader = &primitiveReader->readers[DATA];
+	case FIELD_TYPE__KIND__BYTE:
+		byteStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadByte(byteStreamReader, &value->value8);
 		break;
-	case TYPE__KIND__BINARY:
-		integerStreamReader = &primitiveReader->readers[LENGTH];
-		binaryReader = &primitiveReader->readers[DATA];
+	case FIELD_TYPE__KIND__BINARY:
+		integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
+		binaryReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
 
 		if (result < 0)
@@ -612,16 +612,16 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 		value->binary = malloc(wordLength);
 		result = ReadBinary(binaryReader, (uint8_t*) value->binary, (int) wordLength);
 		break;
-	case TYPE__KIND__TIMESTAMP:
+	case FIELD_TYPE__KIND__TIMESTAMP:
 
 		/* seconds primitiveReader */
-		integerStreamReader = &primitiveReader->readers[DATA];
-		result = ReadInteger(TYPE__KIND__LONG, integerStreamReader, &seconds);
+		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
+		result = ReadInteger(FIELD_TYPE__KIND__LONG, integerStreamReader, &seconds);
 		seconds = ToSignedInteger(seconds);
 
 		/* nano seconds primitiveReader */
-		nanoSecondsReader = &primitiveReader->readers[SECONDARY];
-		result |= ReadInteger(TYPE__KIND__INT, nanoSecondsReader, &nanoSeconds);
+		nanoSecondsReader = &primitiveReader->readers[SECONDARY_STREAM];
+		result |= ReadInteger(FIELD_TYPE__KIND__INT, nanoSecondsReader, &nanoSeconds);
 		newNanos = ParseNanos((long) nanoSeconds);
 		millis = (mktime(&BASE_TIMESTAMP) + seconds) * 1000;
 
@@ -678,7 +678,7 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 	*length = (int) listSize;
 	field->isItemNull = malloc(sizeof(char) * listSize);
 
-	if (itemReader->kind == TYPE__KIND__BINARY)
+	if (itemReader->kind == FIELD_TYPE__KIND__BINARY)
 	{
 		field->listItemSizes = malloc(sizeof(int) * listSize);
 	}
@@ -704,7 +704,7 @@ int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length)
 	field->listItemSizes = NULL;
 	field->isItemNull = NULL;
 
-	if (fieldReader->kind == TYPE__KIND__LIST)
+	if (fieldReader->kind == FIELD_TYPE__KIND__LIST)
 	{
 		return ReadListItem(fieldReader, field, length);
 	}
@@ -721,54 +721,54 @@ int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length)
 /**
  * Get the stream type of each data stream of a data type
  */
-Type__Kind GetStreamKind(Type__Kind type, int streamIndex)
+FieldType__Kind GetStreamKind(FieldType__Kind type, int streamIndex)
 {
 	switch (type)
 	{
-	case TYPE__KIND__BINARY:
+	case FIELD_TYPE__KIND__BINARY:
 		switch (streamIndex)
 		{
 		case 0:
-			return TYPE__KIND__BINARY;
+			return FIELD_TYPE__KIND__BINARY;
 		case 1:
-			return TYPE__KIND__INT;
+			return FIELD_TYPE__KIND__INT;
 		default:
 			return -1;
 		}
 		break;
-	case TYPE__KIND__BOOLEAN:
-	case TYPE__KIND__BYTE:
-	case TYPE__KIND__DOUBLE:
-	case TYPE__KIND__FLOAT:
-	case TYPE__KIND__SHORT:
-	case TYPE__KIND__INT:
-	case TYPE__KIND__LONG:
+	case FIELD_TYPE__KIND__BOOLEAN:
+	case FIELD_TYPE__KIND__BYTE:
+	case FIELD_TYPE__KIND__DOUBLE:
+	case FIELD_TYPE__KIND__FLOAT:
+	case FIELD_TYPE__KIND__SHORT:
+	case FIELD_TYPE__KIND__INT:
+	case FIELD_TYPE__KIND__LONG:
 		return (streamIndex == 0) ? type : -1;
-	case TYPE__KIND__STRING:
+	case FIELD_TYPE__KIND__STRING:
 		switch (streamIndex)
 		{
 		case 0:
 		case 1:
-			return TYPE__KIND__INT;
+			return FIELD_TYPE__KIND__INT;
 		case 2:
-			return TYPE__KIND__BINARY;
+			return FIELD_TYPE__KIND__BINARY;
 		default:
 			return -1;
 		}
 		break;
-	case TYPE__KIND__TIMESTAMP:
+	case FIELD_TYPE__KIND__TIMESTAMP:
 		switch (streamIndex)
 		{
 		case 0:
-			return TYPE__KIND__LONG;
+			return FIELD_TYPE__KIND__LONG;
 		case 1:
-			return TYPE__KIND__INT;
+			return FIELD_TYPE__KIND__INT;
 		default:
 			return -1;
 		}
 		break;
-	case TYPE__KIND__LIST:
-		return streamIndex ? -1 : TYPE__KIND__INT;
+	case FIELD_TYPE__KIND__LIST:
+		return streamIndex ? -1 : FIELD_TYPE__KIND__INT;
 	default:
 		return -1;
 	}
@@ -777,28 +777,28 @@ Type__Kind GetStreamKind(Type__Kind type, int streamIndex)
 /**
  * Get # data streams of a data type (excluding the present bit stream)
  */
-int GetStreamCount(Type__Kind type)
+int GetStreamCount(FieldType__Kind type)
 {
 	switch (type)
 	{
-	case TYPE__KIND__BINARY:
+	case FIELD_TYPE__KIND__BINARY:
 		return BINARY_STREAM_COUNT;
-	case TYPE__KIND__BOOLEAN:
-	case TYPE__KIND__BYTE:
-	case TYPE__KIND__DOUBLE:
-	case TYPE__KIND__FLOAT:
-	case TYPE__KIND__SHORT:
-	case TYPE__KIND__INT:
-	case TYPE__KIND__LONG:
+	case FIELD_TYPE__KIND__BOOLEAN:
+	case FIELD_TYPE__KIND__BYTE:
+	case FIELD_TYPE__KIND__DOUBLE:
+	case FIELD_TYPE__KIND__FLOAT:
+	case FIELD_TYPE__KIND__SHORT:
+	case FIELD_TYPE__KIND__INT:
+	case FIELD_TYPE__KIND__LONG:
 		return COMMON_STREAM_COUNT;
-	case TYPE__KIND__STRING:
+	case FIELD_TYPE__KIND__STRING:
 		return STRING_STREAM_COUNT;
-	case TYPE__KIND__TIMESTAMP:
+	case FIELD_TYPE__KIND__TIMESTAMP:
 		return TIMESTAMP_STREAM_COUNT;
-	case TYPE__KIND__LIST:
+	case FIELD_TYPE__KIND__LIST:
 		/* for length */
 		return 1;
-	case TYPE__KIND__STRUCT:
+	case FIELD_TYPE__KIND__STRUCT:
 		return 0;
 	default:
 		return -1;
@@ -868,16 +868,16 @@ int FieldReaderFree(FieldReader* reader)
 
 	switch (reader->kind)
 	{
-	case TYPE__KIND__STRUCT:
+	case FIELD_TYPE__KIND__STRUCT:
 		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
 		return 0;
-	case TYPE__KIND__LIST:
+	case FIELD_TYPE__KIND__LIST:
 		listReader = (ListFieldReader*) reader->fieldReader;
 		FieldReaderFree(&listReader->itemReader);
 		return 0;
-	case TYPE__KIND__DECIMAL:
-	case TYPE__KIND__UNION:
-	case TYPE__KIND__MAP:
+	case FIELD_TYPE__KIND__DECIMAL:
+	case FIELD_TYPE__KIND__UNION:
+	case FIELD_TYPE__KIND__MAP:
 		return -1;
 	default:
 		PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->fieldReader);

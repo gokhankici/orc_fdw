@@ -10,55 +10,55 @@
 long totalBytesRead = 0;
 long totalUncompressedBytes = 0;
 
-char* getTypeKindName(Type__Kind kind);
-void printType(Type** types, char* typeName, int typeIndex, int depth);
-void printStatistics(ColumnStatistics* statistics, Type* type);
+char* getTypeKindName(FieldType__Kind kind);
+void printType(FieldType** types, char* typeName, int typeIndex, int depth);
+void printStatistics(ColumnStatistics* statistics, FieldType* fieldType);
 char* getStreamKindName(Stream__Kind kind);
 char* getEncodingName(ColumnEncoding__Kind kind);
 void printDataInHex(uint8_t* data, int length);
 void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset);
 
-char* getTypeKindName(Type__Kind kind)
+char* getTypeKindName(FieldType__Kind kind)
 {
-	if (kind == TYPE__KIND__BOOLEAN)
+	if (kind == FIELD_TYPE__KIND__BOOLEAN)
 		return "BOOLEAN";
-	else if (kind == TYPE__KIND__BYTE)
+	else if (kind == FIELD_TYPE__KIND__BYTE)
 		return "BYTE";
-	else if (kind == TYPE__KIND__SHORT)
+	else if (kind == FIELD_TYPE__KIND__SHORT)
 		return "SHORT";
-	else if (kind == TYPE__KIND__INT)
+	else if (kind == FIELD_TYPE__KIND__INT)
 		return "INT";
-	else if (kind == TYPE__KIND__LONG)
+	else if (kind == FIELD_TYPE__KIND__LONG)
 		return "LONG";
-	else if (kind == TYPE__KIND__FLOAT)
+	else if (kind == FIELD_TYPE__KIND__FLOAT)
 		return "FLOAT";
-	else if (kind == TYPE__KIND__DOUBLE)
+	else if (kind == FIELD_TYPE__KIND__DOUBLE)
 		return "DOUBLE";
-	else if (kind == TYPE__KIND__STRING)
+	else if (kind == FIELD_TYPE__KIND__STRING)
 		return "STRING";
-	else if (kind == TYPE__KIND__BINARY)
+	else if (kind == FIELD_TYPE__KIND__BINARY)
 		return "BINARY";
-	else if (kind == TYPE__KIND__TIMESTAMP)
+	else if (kind == FIELD_TYPE__KIND__TIMESTAMP)
 		return "TIMESTAMP";
-	else if (kind == TYPE__KIND__LIST)
+	else if (kind == FIELD_TYPE__KIND__LIST)
 		return "LIST";
-	else if (kind == TYPE__KIND__MAP)
+	else if (kind == FIELD_TYPE__KIND__MAP)
 		return "MAP";
-	else if (kind == TYPE__KIND__STRUCT)
+	else if (kind == FIELD_TYPE__KIND__STRUCT)
 		return "STRUCT";
-	else if (kind == TYPE__KIND__UNION)
+	else if (kind == FIELD_TYPE__KIND__UNION)
 		return "UNION";
-	else if (kind == TYPE__KIND__DECIMAL)
+	else if (kind == FIELD_TYPE__KIND__DECIMAL)
 		return "DECIMAL";
 	else
 		return NULL;
 }
 
-void printType(Type** types, char* typeName, int typeIndex, int depth)
+void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 {
-	Type* type = types[typeIndex];
-	Type* subType = NULL;
-	Type__Kind kind = 0;
+	FieldType* type = types[typeIndex];
+	FieldType* subType = NULL;
+	FieldType__Kind kind = 0;
 	int typeIterator = 0;
 	int subTypeIndex = 0;
 	int depthIterator = 0;
@@ -78,13 +78,13 @@ void printType(Type** types, char* typeName, int typeIndex, int depth)
 
 		switch (kind)
 		{
-		case TYPE__KIND__STRUCT:
+		case FIELD_TYPE__KIND__STRUCT:
 			printType(types, subTypeName, subTypeIndex, depth + 1);
 			break;
-		case TYPE__KIND__UNION:
+		case FIELD_TYPE__KIND__UNION:
 			printType(types, subTypeName, subTypeIndex, depth + 1);
 			break;
-		case TYPE__KIND__LIST:
+		case FIELD_TYPE__KIND__LIST:
 			/* print the name of the list */
 			for (depthIterator = 0; depthIterator < depth + 1; ++depthIterator)
 			{
@@ -95,7 +95,7 @@ void printType(Type** types, char* typeName, int typeIndex, int depth)
 			/* print the child of the list (which is the type of the list) */
 			printType(types, "element", subTypeIndex + 1, depth + 2);
 			break;
-		case TYPE__KIND__MAP:
+		case FIELD_TYPE__KIND__MAP:
 			/* print the name of the map */
 			for (depthIterator = 0; depthIterator < depth + 1; ++depthIterator)
 			{
@@ -120,7 +120,7 @@ void printType(Type** types, char* typeName, int typeIndex, int depth)
 
 }
 
-void printStatistics(ColumnStatistics* statistics, Type* type)
+void printStatistics(ColumnStatistics* statistics, FieldType* fieldType)
 {
 	IntegerStatistics *intStatistics = NULL;
 	DoubleStatistics *doubleStatistics = NULL;
@@ -128,12 +128,12 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 	BucketStatistics *bucketStatistics = NULL;
 	DecimalStatistics* decimalStatistics = NULL;
 
-	switch (type->kind)
+	switch (fieldType->kind)
 	{
-	case TYPE__KIND__BYTE:
-	case TYPE__KIND__SHORT:
-	case TYPE__KIND__INT:
-	case TYPE__KIND__LONG:
+	case FIELD_TYPE__KIND__BYTE:
+	case FIELD_TYPE__KIND__SHORT:
+	case FIELD_TYPE__KIND__INT:
+	case FIELD_TYPE__KIND__LONG:
 		intStatistics = statistics->intstatistics;
 		if (intStatistics)
 		{
@@ -141,8 +141,8 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 					intStatistics->sum);
 		}
 		break;
-	case TYPE__KIND__FLOAT:
-	case TYPE__KIND__DOUBLE:
+	case FIELD_TYPE__KIND__FLOAT:
+	case FIELD_TYPE__KIND__DOUBLE:
 		doubleStatistics = statistics->doublestatistics;
 		if (doubleStatistics)
 		{
@@ -150,14 +150,14 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 					doubleStatistics->sum);
 		}
 		break;
-	case TYPE__KIND__STRING:
+	case FIELD_TYPE__KIND__STRING:
 		stringStatistics = statistics->stringstatistics;
 		if (stringStatistics)
 		{
 			printf("    min: %s | max: %s\n", stringStatistics->minimum, stringStatistics->maximum);
 		}
 		break;
-	case TYPE__KIND__BOOLEAN:
+	case FIELD_TYPE__KIND__BOOLEAN:
 		bucketStatistics = statistics->bucketstatistics;
 		if (bucketStatistics)
 		{
@@ -168,7 +168,7 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 			}
 		}
 		break;
-	case TYPE__KIND__DECIMAL:
+	case FIELD_TYPE__KIND__DECIMAL:
 		decimalStatistics = statistics->decimalstatistics;
 		if (decimalStatistics)
 		{
@@ -180,19 +180,19 @@ void printStatistics(ColumnStatistics* statistics, Type* type)
 		/* to display which type has uses which statistics type */
 		if (statistics->intstatistics)
 		{
-			printf("    %s -> int\n", getTypeKindName(type->kind));
+			printf("    %s -> int\n", getTypeKindName(fieldType->kind));
 		}
 		else if (statistics->doublestatistics)
 		{
-			printf("    %s -> double\n", getTypeKindName(type->kind));
+			printf("    %s -> double\n", getTypeKindName(fieldType->kind));
 		}
 		else if (statistics->bucketstatistics)
 		{
-			printf("    %s -> bucket\n", getTypeKindName(type->kind));
+			printf("    %s -> bucket\n", getTypeKindName(fieldType->kind));
 		}
 		else if (statistics->decimalstatistics)
 		{
-			printf("    %s -> decimal\n", getTypeKindName(type->kind));
+			printf("    %s -> decimal\n", getTypeKindName(fieldType->kind));
 		}
 
 		break;

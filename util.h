@@ -20,7 +20,7 @@
 #define min(x,y) (((x) < (y)) ? (x) : (y))
 #define max(x,y) (((x) < (y)) ? (y) : (x))
 
-void PrintFieldValue(FILE* file, FieldValue* value, Type__Kind kind, int length);
+void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int length);
 
 int TimespecToStr(char* timespecBuffer, struct timespec *ts);
 

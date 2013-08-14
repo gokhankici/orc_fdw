@@ -121,9 +121,9 @@ void testStringReader()
 	stringReader.dictionarySize = 2;
 
 	StreamReaderInit(TYPE__KIND__BOOLEAN, &reader.presentBitReader, present, (long) 2);
-	StreamReaderInit(TYPE__KIND__INT, &stringReader.readers[DATA], data, (long) 4);
+	StreamReaderInit(TYPE__KIND__INT, &stringReader.readers[DATA_STREAM], data, (long) 4);
 	StreamReaderInit(TYPE__KIND__INT, &stringReader.readers[LENGTH], length, (long) 3);
-	StreamReaderInit(TYPE__KIND__BINARY, &stringReader.readers[DICTIONARY_DATA], dictionary, (long) 12);
+	StreamReaderInit(TYPE__KIND__BINARY, &stringReader.readers[DICTIONARY_DATA_STREAM], dictionary, (long) 12);
 
 	for (iterator = 0; iterator < noOfWords; ++iterator)
 	{

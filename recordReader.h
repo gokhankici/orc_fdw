@@ -8,14 +8,15 @@
 #ifndef RECORDREADER_H_
 #define RECORDREADER_H_
 
+#include "postgres.h"
 #include <time.h>
 #include "orc.pb-c.h"
 #include "inputStream.h"
 
-#define DATA 			0
-#define LENGTH 			1
-#define SECONDARY 		1
-#define DICTIONARY_DATA	2
+#define DATA_STREAM 			0
+#define LENGTH_STREAM 			1
+#define SECONDARY_STREAM 		1
+#define DICTIONARY_DATA_STREAM	2
 
 #define MAX_STREAM_COUNT		3
 #define STRING_STREAM_COUNT		3
@@ -29,7 +30,7 @@
 #define ToUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
 #define ToSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
 
-#define IsComplexType(type) (type == TYPE__KIND__LIST || type == TYPE__KIND__STRUCT || type == TYPE__KIND__MAP)
+#define IsComplexType(type) (type == FIELD_TYPE__KIND__LIST || type == FIELD_TYPE__KIND__STRUCT || type == FIELD_TYPE__KIND__MAP)
 
 typedef enum
 {
@@ -84,7 +85,8 @@ typedef struct
 
 typedef struct
 {
-	Type__Kind kind;
+	FieldType__Kind kind;
+	int psqlKind;
 	int orcColumnNo;
 	StreamReader presentBitReader;
 	/* Length reader for list & map complex types */
@@ -126,8 +128,8 @@ extern struct tm BASE_TIMESTAMP;
 int FieldReaderFree(FieldReader* reader);
 
 int StreamReaderFree(StreamReader* streamReader);
-int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fileName, long offset,
-		long limit, CompressionParameters* parameters);
+int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, char* fileName, long offset, long limit,
+		CompressionParameters* parameters);
 
 /**
  * Reads one element from the type.
@@ -138,7 +140,7 @@ int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
 /**
  * Helper functions to get the kth stream and its type
  */
-Type__Kind GetStreamKind(Type__Kind type, int streamIndex);
-int GetStreamCount(Type__Kind type);
+FieldType__Kind GetStreamKind(FieldType__Kind type, int streamIndex);
+int GetStreamCount(FieldType__Kind type);
 
 #endif /* RECORDREADER_H_ */

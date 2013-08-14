@@ -71,7 +71,7 @@ int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 	return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
 }
 
-void PrintFieldValue(FILE* file, FieldValue* value, Type__Kind kind, int length)
+void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int length)
 {
 	char* timespecBuffer = NULL;
 	uint8_t *binaryValues = NULL;
@@ -79,32 +79,32 @@ void PrintFieldValue(FILE* file, FieldValue* value, Type__Kind kind, int length)
 
 	switch (kind)
 	{
-	case TYPE__KIND__BOOLEAN:
+	case FIELD_TYPE__KIND__BOOLEAN:
 		fprintf(file, "%d", (int) value->value8);
 		break;
-	case TYPE__KIND__BYTE:
+	case FIELD_TYPE__KIND__BYTE:
 		fprintf(file, "%.2X", value->value8);
 		break;
-	case TYPE__KIND__SHORT:
-	case TYPE__KIND__INT:
-	case TYPE__KIND__LONG:
+	case FIELD_TYPE__KIND__SHORT:
+	case FIELD_TYPE__KIND__INT:
+	case FIELD_TYPE__KIND__LONG:
 		fprintf(file, "%ld", value->value64);
 		break;
-	case TYPE__KIND__FLOAT:
+	case FIELD_TYPE__KIND__FLOAT:
 		fprintf(file, "%.2f", value->floatValue);
 		break;
-	case TYPE__KIND__DOUBLE:
+	case FIELD_TYPE__KIND__DOUBLE:
 		fprintf(file, "%.2lf", value->doubleValue);
 		break;
-	case TYPE__KIND__STRING:
+	case FIELD_TYPE__KIND__STRING:
 		fprintf(file, "%s", value->binary);
 		break;
-	case TYPE__KIND__TIMESTAMP:
+	case FIELD_TYPE__KIND__TIMESTAMP:
 		timespecBuffer = malloc(TIMESPEC_BUFFER_LENGTH);
 		TimespecToStr(timespecBuffer, &value->time);
 		fprintf(file, "%s", timespecBuffer);
 		break;
-	case TYPE__KIND__BINARY:
+	case FIELD_TYPE__KIND__BINARY:
 		binaryValues = (uint8_t*) value->binary;
 		for (iterator = 0; iterator < length; ++iterator)
 		{

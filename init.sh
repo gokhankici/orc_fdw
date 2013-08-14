@@ -6,6 +6,3 @@ protoc-c --c_out=. orc.proto
 git pull
 git submodule init
 git submodule update
-
-cd snappy-c
-make
