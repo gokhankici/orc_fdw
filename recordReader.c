@@ -671,7 +671,7 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 	if (result)
 	{
 		/* error while reading the list size */
-		return 1;
+		return -1;
 	}
 
 	field->list = malloc(sizeof(FieldValue) * listSize);
@@ -690,7 +690,7 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 		if (result < 0)
 		{
 			/* error while reading the list item */
-			return 1;
+			return -1;
 		}
 		field->isItemNull[iterator] = result;
 	}
