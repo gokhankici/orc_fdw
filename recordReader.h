@@ -9,7 +9,7 @@
 #define RECORDREADER_H_
 
 #include <time.h>
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 #include "inputStream.h"
 
 #define DATA 			0

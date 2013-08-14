@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 #include "recordReader.h"
 
 struct tm BASE_TIMESTAMP =

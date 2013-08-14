@@ -1,5 +1,5 @@
 #include <zlib.h>
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 #include "fileReader.h"
 #include "recordReader.h"
 #include "inputStream.h"
@@ -315,13 +315,11 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName, lo
 	Type__Kind streamKind = 0;
 	ColumnEncoding *columnEncoding = NULL;
 	int fieldNo = 0;
-	int hasLengthStream = 0;
 	int noOfDataStreams = 0;
 	int totalNoOfStreams = 0;
 	int dataStreamIterator = 0;
 	int dictionaryIterator = 0;
 	int result = 0;
-	int noOfStreamToSkip = 0;
 
 	totalNoOfStreams = stripeFooter->n_streams;
 	stream = stripeFooter->streams[*streamNo];

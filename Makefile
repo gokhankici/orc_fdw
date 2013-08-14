@@ -1,42 +1,24 @@
-CC			 =	gcc
-LIBS		+= 	`pkg-config --libs libprotobuf-c zlib`
-INCLUDES	+= 	`pkg-config --cflags libprotobuf-c zlib`
-CFLAGS		 = 	-Wall -g -Wmissing-prototypes -Wpointer-arith \
-				-Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute \
-				-Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard
-#not added flags -g -pg
+# contrib/orc_fdw/Makefile
 
-SNAPPY_FOLDER	= snappy-c
-EXEC_FOLDER		= out
+MODULE_big = orc_fdw
+SNAPPY_FOLDER = snappy-c
+OBJS = orc.pb-c.o recordReader.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o inputStream.o orc_fdw.o
+SHLIB_LINK = -lz
 
-READMETADATA_OBJECTS	= orc_proto.pb-c.o $(SNAPPY_FOLDER)/snappy.o util.o fileReader.o recordReader.o readMetadata.o inputStream.o
-TESTFILEREADER_OBJECTS	= orc_proto.pb-c.o testFileReader.o recordReader.o util.o fileReader.o $(SNAPPY_FOLDER)/snappy.o inputStream.o 
-EXECUTABLES				= readMetadata testFileReader
+EXTENSION = orc_fdw
+DATA = orc_fdw--1.0.sql
 
-all:			snappy_c orc_proto $(EXECUTABLES) 
-				mv $(EXECUTABLES) $(EXEC_FOLDER)
+REGRESS = orc_fdw
 
-snappy_c:
-				cd snappy-c && make
+EXTRA_CLEAN = sql/orc_fdw.sql expected/orc_fdw.out
 
-orc_proto: 		orc_proto.pb-c.c
-
-orc_proto.pb-c.c:	
-				protoc-c --c_out=. orc_proto.proto
-
-.SUFFIXES: 		.c .o
-
-.c.o:	
-				$(CC) $(CFLAGS) $(INCLUDES) -c $<
-
-.o:		
-				$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
-
-readMetadata:	$(READMETADATA_OBJECTS)
-
-testFileReader:	$(TESTFILEREADER_OBJECTS)
-
-.PHONY:			clean
-
-clean:	
-				rm -f $(EXEC_FOLDER)/* *.o gmon.out
+ifdef USE_PGXS
+PG_CONFIG = pg_config
+PGXS := $(shell $(PG_CONFIG) --pgxs)
+include $(PGXS)
+else
+subdir = contrib/orc_fdw
+top_builddir = ../..
+include $(top_builddir)/src/Makefile.global
+include $(top_srcdir)/contrib/contrib-global.mk
+endif

@@ -5,7 +5,7 @@
 #define PROTOBUF_C_NO_DEPRECATED
 #endif
 
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 void   integer_statistics__init
                      (IntegerStatistics         *message)
 {

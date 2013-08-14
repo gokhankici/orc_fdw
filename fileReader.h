@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 #include "recordReader.h"
 #include "util.h"
 

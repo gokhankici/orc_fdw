@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 #include "fileReader.h"
 #include "recordReader.h"
 #include "util.h"

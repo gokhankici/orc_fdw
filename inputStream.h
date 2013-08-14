@@ -9,7 +9,7 @@
 #define INPUTSTREAM_H_
 
 #include <stdio.h>
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 
 #define DEFAULT_BUFFER_SIZE 262144
 

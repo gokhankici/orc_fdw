@@ -8,7 +8,7 @@
 #ifndef UTIL_H_
 #define UTIL_H_
 
-#include "orc_proto.pb-c.h"
+#include "orc.pb-c.h"
 #include "recordReader.h"
 
 #define COMPRESSED_HEADER_SIZE 3
