@@ -11,10 +11,6 @@
 #include "util.h"
 #include "snappy-c/snappy.h"
 
-/* external variables to store the no of read bytes */
-extern long totalBytesRead;
-extern long totalUncompressedBytes;
-
 /**
  * Initialize a FileStream.
  *
@@ -158,7 +154,6 @@ static int FileBufferFill(FileBuffer* fileStream)
 		return -1;
 	}
 
-	totalBytesRead += bytesRead;
 	fileStream->length += bytesRead;
 
 	return bytesRead;
@@ -508,7 +503,6 @@ static int ReadNextCompressedBlock(FileStream* stream)
 			/* compression kind not supported */
 			return -1;
 		}
-		totalUncompressedBytes += stream->length;
 	}
 	return 0;
 }

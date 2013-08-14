@@ -9,6 +9,8 @@
 out/*
 *.out
 *~
+orc.pb-c.c
+orc.pb-c.h
 
 # Packages #
 ############
