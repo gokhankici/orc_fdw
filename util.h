@@ -11,6 +11,10 @@
 #include "orc.pb-c.h"
 #include "recordReader.h"
 
+#define LogError(x) fprintf(stderr, x)
+#define LogError2(x,y) fprintf(stderr, x,y)
+#define LogError3(x,y,z) fprintf(stderr, x,y,z)
+
 #define COMPRESSED_HEADER_SIZE 3
 
 #define min(x,y) (((x) < (y)) ? (x) : (y))

@@ -18,7 +18,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, CompressionParameters* parameters)
 {
 	PostScript* postScript = NULL;
-	FILE* orcFile = fopen(orcFileName, "r");
+	FILE* orcFile = AllocateFile(orcFileName, "r");
 	int isByteRead = 0;
 	char c = 0;
 	size_t msg_len = 0;
@@ -27,6 +27,7 @@ PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, Compressio
 
 	if (orcFile == NULL)
 	{
+		LogError("Cannot open orc file");
 		return NULL;
 	}
 
@@ -35,7 +36,7 @@ PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, Compressio
 
 	if (!isByteRead)
 	{
-		fprintf(stderr, "Error while reading the last byte\n");
+		LogError("Error while reading the last byte\n");
 		return NULL;
 	}
 
@@ -48,7 +49,7 @@ PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, Compressio
 
 	if (msg_len != psSize)
 	{
-		fprintf(stderr, "Error while reading postscript from file\n");
+		LogError("Error while reading postscript from file\n");
 		return NULL;
 	}
 
@@ -57,7 +58,7 @@ PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, Compressio
 
 	if (postScript == NULL)
 	{
-		fprintf(stderr, "error unpacking incoming message\n");
+		LogError("error unpacking incoming message\n");
 		return NULL;
 	}
 
@@ -91,7 +92,7 @@ Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, Com
 
 	if (stream == NULL)
 	{
-		fprintf(stderr, "Error reading file stream\n");
+		LogError("Error reading file stream\n");
 		return NULL;
 	}
 
@@ -99,7 +100,7 @@ Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, Com
 
 	if (result)
 	{
-		fprintf(stderr, "Error while uncompressing file footer\n");
+		LogError("Error while uncompressing file footer\n");
 		return NULL;
 	}
 
@@ -108,7 +109,7 @@ Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, Com
 
 	if (footer == NULL)
 	{
-		fprintf(stderr, "error unpacking incoming message\n");
+		LogError("error unpacking incoming message\n");
 		return NULL;
 	}
 
@@ -141,7 +142,7 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 
 	if (stream == NULL)
 	{
-		fprintf(stderr, "Error reading file stream\n");
+		LogError("Error reading file stream\n");
 		return NULL;
 	}
 
@@ -150,14 +151,14 @@ StripeFooter* StripeFooterInit(char* orcFileName, StripeInformation* stripeInfo,
 
 	if (result)
 	{
-		fprintf(stderr, "Error while uncompressing file footer");
+		LogError("Error while uncompressing file footer");
 	}
 
 	stripeFooter = stripe_footer__unpack(NULL, uncompressedStripeFooterSize, (uint8_t*) stripeFooterBuffer);
 
 	if (stripeFooter == NULL)
 	{
-		fprintf(stderr, "error while unpacking stripe footer\n");
+		LogError("error while unpacking stripe footer\n");
 		return NULL;
 	}
 

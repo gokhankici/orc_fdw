@@ -403,7 +403,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 	if (chunkLength > bufferSize)
 	{
-		fprintf(stderr, "Buffer size too small. size = %d needed = %d\n", bufferSize, chunkLength);
+		LogError3("Buffer size too small. size = %d needed = %d\n", bufferSize, chunkLength);
 		return -1;
 	}
 
@@ -429,7 +429,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 		if (result != chunkLength)
 		{
-			fprintf(stderr, "chunk of given length couldn't read from the file\n");
+			LogError("chunk of given length couldn't read from the file\n");
 			return -1;
 		}
 
@@ -453,7 +453,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 		if (compressed == NULL || result != chunkLength)
 		{
-			fprintf(stderr, "chunk of given length couldn't read from the file\n");
+			LogError("chunk of given length couldn't read from the file\n");
 			return -1;
 		}
 
@@ -465,7 +465,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 			if (result != Z_OK)
 			{
-				fprintf(stderr, "Error while decompressing with zlib inflator\n");
+				LogError("Error while decompressing with zlib inflator\n");
 				return -1;
 			}
 
@@ -476,7 +476,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 			if (result != 1)
 			{
-				fprintf(stderr, "Error while calculating uncompressed size of snappy block.\n");
+				LogError("Error while calculating uncompressed size of snappy block.\n");
 				return 1;
 			}
 
@@ -484,7 +484,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 			if (stream->length > stream->bufferSize)
 			{
-				fprintf(stderr, "Uncompressed stream size (%d) exceeds buffer size (%d\n", stream->length,
+				LogError3("Uncompressed stream size (%d) exceeds buffer size (%d\n", stream->length,
 						stream->bufferSize);
 				return -1;
 			}
@@ -494,7 +494,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 			if (result)
 			{
-				fprintf(stderr, "Error while uncompressing with snappy. Error code %d\n", result);
+				LogError2("Error while uncompressing with snappy. Error code %d\n", result);
 				return -1;
 			}
 
@@ -537,7 +537,7 @@ char* FileStreamRead(FileStream* stream, int *length)
 
 		if (result)
 		{
-			fprintf(stderr, "Error reading compressed stream header\n");
+			LogError("Error reading compressed stream header\n");
 			return NULL;
 		}
 	}
@@ -566,13 +566,13 @@ char* FileStreamRead(FileStream* stream, int *length)
 
 		if (result)
 		{
-			fprintf(stderr, "Error while initializing the next block\n");
+			LogError("Error while initializing the next block\n");
 			return NULL;
 		}
 
 		if (stream->length < requestedLength - bytesCurrentlyRead)
 		{
-			fprintf(stderr, "Couldn't get enough bytes from the next block\n");
+			LogError("Couldn't get enough bytes from the next block\n");
 			return NULL;
 		}
 
@@ -610,7 +610,7 @@ int FileStreamReadByte(FileStream* stream, char* value)
 
 		if (result)
 		{
-			fprintf(stderr, "Error reading compressed stream header\n");
+			LogError("Error reading compressed stream header\n");
 			return -1;
 		}
 	}
@@ -656,7 +656,7 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 		result = ReadNextCompressedBlock(stream);
 		if (result)
 		{
-			fprintf(stderr, "Error reading compressed stream header\n");
+			LogError("Error reading compressed stream header\n");
 			return -1;
 		}
 	}
@@ -675,7 +675,7 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 			result = ReadNextCompressedBlock(stream);
 			if (result)
 			{
-				fprintf(stderr, "Error reading compressed stream header\n");
+				LogError("Error reading compressed stream header\n");
 				return -1;
 			}
 

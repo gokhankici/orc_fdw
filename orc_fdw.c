@@ -1,23 +1,25 @@
 /*-------------------------------------------------------------------------
  *
  * orc_fdw.c
- *		  foreign-data wrapper for server-side flat files.
  *
- * Copyright (c) 2010-2012, PostgreSQL Global Development Group
+ * Function definitions for JSON foreign data wrapper.
  *
- * IDENTIFICATION
- *		  contrib/orc_fdw/orc_fdw.c
+ * Copyright (c) 2013, Citus Data, Inc.
+ *
+ * $Id$
  *
  *-------------------------------------------------------------------------
  */
-#include "postgres.h"
 
+#include "postgres.h"
+#include "orc_fdw.h"
+
+#include <stdio.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 #include "access/reloptions.h"
 #include "catalog/pg_foreign_table.h"
-#include "commands/copy.h"
+#include "catalog/pg_type.h"
 #include "commands/defrem.h"
 #include "commands/explain.h"
 #include "commands/vacuum.h"
@@ -26,910 +28,1243 @@
 #include "miscadmin.h"
 #include "nodes/makefuncs.h"
 #include "optimizer/cost.h"
+#include "optimizer/plancat.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
 #include "optimizer/restrictinfo.h"
+#include "optimizer/var.h"
+#include "port.h"
+#include "storage/fd.h"
+#include "utils/array.h"
+#include "utils/builtins.h"
+#include "utils/date.h"
+#include "utils/datetime.h"
+#include "utils/int8.h"
+#include "utils/timestamp.h"
+#include "utils/hsearch.h"
+#include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
-PG_MODULE_MAGIC;
+#include "fileReader.h"
 
-/*
- * Describes the valid options for objects that use this wrapper.
+/* Local functions forward declarations */
+static StringInfo OptionNamesString(Oid currentContextId);
+
+static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel,
+		Oid foreignTableId);
+static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId);
+static ForeignScan * OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
+		Oid foreignTableId, ForeignPath *bestPath, List *targetList, List *scanClauses);
+static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState);
+static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags);
+static TupleTableSlot * OrcIterateForeignScan(ForeignScanState *scanState);
+static void OrcReScanForeignScan(ForeignScanState *scanState);
+static void OrcEndForeignScan(ForeignScanState *scanState);
+
+static OrcFdwOptions * OrcGetOptions(Oid foreignTableId);
+static char * OrcGetOptionValue(Oid foreignTableId, const char *optionName);
+static double TupleCount(RelOptInfo *baserel, const char *filename);
+static BlockNumber PageCount(const char *filename);
+static List * ColumnList(RelOptInfo *baserel);
+static HTAB * ColumnMappingHash(Oid foreignTableId, List *columnList);
+static bool OrcAnalyzeForeignTable(Relation relation,
+		AcquireSampleRowsFunc *acquireSampleRowsFunc, BlockNumber *totalPageCount);
+static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
+		int targetRowCount, double *totalRowCount, double *totalDeadRowCount);
+
+/**
+ * Helper functions
  */
-struct OrcFdwOption
-{
-	const char *optname;
-	Oid			optcontext;		/* Oid of catalog in which option may appear */
-};
+void OrcGetNextStripe(OrcFdwExecState* execState, Footer* footer);
+static void FillTupleSlot(FieldReader* recordReader, HTAB *columnMappingHash,
+		Datum *columnValues, bool *columnNulls);
 
-/*
- * Valid options for orc_fdw.
- * These options are based on the options for COPY FROM command.
- * But note that force_not_null is handled as a boolean option attached to
- * each column, not as a table option.
- *
- * Note: If you are adding new option for user mapping, you need to modify
- * fileGetOptions(), which currently doesn't bother to look at user mappings.
- */
-static const struct OrcFdwOption valid_options[] = {
-	/* File options */
-	{"filename", ForeignTableRelationId},
-	{"force_not_null", AttributeRelationId},
-
-	/*
-	 * force_quote is not supported by orc_fdw because it's for COPY TO.
-	 */
-
-	/* Sentinel */
-	{NULL, InvalidOid}
-};
-
-/*
- * FDW-specific information for RelOptInfo.fdw_private.
- */
-typedef struct OrcFdwPlanState
-{
-	char	   *filename;		/* file to read */
-	List	   *options;		/* merged COPY options, excluding filename */
-	BlockNumber pages;			/* estimate of file's physical size */
-	double		ntuples;		/* estimate of number of rows in file */
-} OrcFdwPlanState;
-
-/*
- * FDW-specific information for ForeignScanState.fdw_state.
- */
-typedef struct OrcFdwExecutionState
-{
-	char	   *filename;		/* file to read */
-	List	   *options;		/* merged COPY options, excluding filename */
-	CopyState	cstate;			/* state of reading file */
-} OrcFdwExecutionState;
-
-/*
- * SQL functions
- */
-extern Datum orc_fdw_handler(PG_FUNCTION_ARGS);
-extern Datum orc_fdw_validator(PG_FUNCTION_ARGS);
+/* Declarations for dynamic loading */
+PG_MODULE_MAGIC
+;
 
 PG_FUNCTION_INFO_V1(orc_fdw_handler);
 PG_FUNCTION_INFO_V1(orc_fdw_validator);
 
 /*
- * FDW callback routines
+ * orc_fdw_handler creates and returns a struct with pointers to foreign table
+ * callback functions.
  */
-static void orcGetForeignRelSize(PlannerInfo *root,
-					  RelOptInfo *baserel,
-					  Oid foreigntableid);
-static void orcGetForeignPaths(PlannerInfo *root,
-					RelOptInfo *baserel,
-					Oid foreigntableid);
-static ForeignScan *orcGetForeignPlan(PlannerInfo *root,
-				   RelOptInfo *baserel,
-				   Oid foreigntableid,
-				   ForeignPath *best_path,
-				   List *tlist,
-				   List *scan_clauses);
-static void orcExplainForeignScan(ForeignScanState *node, ExplainState *es);
-static void orcBeginForeignScan(ForeignScanState *node, int eflags);
-static TupleTableSlot *orcIterateForeignScan(ForeignScanState *node);
-static void orcReScanForeignScan(ForeignScanState *node);
-static void orcEndForeignScan(ForeignScanState *node);
-static bool orcAnalyzeForeignTable(Relation relation,
-						AcquireSampleRowsFunc *func,
-						BlockNumber *totalpages);
-
-/*
- * Helper functions
- */
-static bool is_valid_option(const char *option, Oid context);
-static void fileGetOptions(Oid foreigntableid,
-			   char **filename, List **other_options);
-static List *get_orc_fdw_attribute_options(Oid relid);
-static void estimate_size(PlannerInfo *root, RelOptInfo *baserel,
-			  OrcFdwPlanState *fdw_private);
-static void estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
-			   OrcFdwPlanState *fdw_private,
-			   Cost *startup_cost, Cost *total_cost);
-static int file_acquire_sample_rows(Relation onerel, int elevel,
-						 HeapTuple *rows, int targrows,
-						 double *totalrows, double *totaldeadrows);
-
-
-/*
- * Foreign-data wrapper handler function: return a struct with pointers
- * to my callback routines.
- */
-Datum
-orc_fdw_handler(PG_FUNCTION_ARGS)
+Datum orc_fdw_handler(PG_FUNCTION_ARGS)
 {
-	FdwRoutine *fdwroutine = makeNode(FdwRoutine);
+	FdwRoutine *fdwRoutine = makeNode(FdwRoutine);
 
-	fdwroutine->GetForeignRelSize = orcGetForeignRelSize;
-	fdwroutine->GetForeignPaths = orcGetForeignPaths;
-	fdwroutine->GetForeignPlan = orcGetForeignPlan;
-	fdwroutine->ExplainForeignScan = orcExplainForeignScan;
-	fdwroutine->BeginForeignScan = orcBeginForeignScan;
-	fdwroutine->IterateForeignScan = orcIterateForeignScan;
-	fdwroutine->ReScanForeignScan = orcReScanForeignScan;
-	fdwroutine->EndForeignScan = orcEndForeignScan;
-	fdwroutine->AnalyzeForeignTable = orcAnalyzeForeignTable;
+	fdwRoutine->GetForeignRelSize = OrcGetForeignRelSize;
+	fdwRoutine->GetForeignPaths = OrcGetForeignPaths;
+	fdwRoutine->GetForeignPlan = OrcGetForeignPlan;
+	fdwRoutine->ExplainForeignScan = OrcExplainForeignScan;
+	fdwRoutine->BeginForeignScan = OrcBeginForeignScan;
+	fdwRoutine->IterateForeignScan = OrcIterateForeignScan;
+	fdwRoutine->ReScanForeignScan = OrcReScanForeignScan;
+	fdwRoutine->EndForeignScan = OrcEndForeignScan;
+	fdwRoutine->AnalyzeForeignTable = OrcAnalyzeForeignTable;
 
-	PG_RETURN_POINTER(fdwroutine);
+	PG_RETURN_POINTER(fdwRoutine);
 }
 
 /*
- * Validate the generic options given to a FOREIGN DATA WRAPPER, SERVER,
- * USER MAPPING or FOREIGN TABLE that uses orc_fdw.
- *
- * Raise an ERROR if the option or its value is considered invalid.
+ * orc_fdw_validator validates options given to one of the following commands:
+ * foreign data wrapper, server, user mapping, or foreign table. This function
+ * errors out if the given option name or its value is considered invalid. The
+ * filename option is required by the foreign table, so we error out if it is
+ * not provided.
  */
-Datum
-orc_fdw_validator(PG_FUNCTION_ARGS)
+Datum orc_fdw_validator(PG_FUNCTION_ARGS)
 {
-	List	   *options_list = untransformRelOptions(PG_GETARG_DATUM(0));
-	Oid			catalog = PG_GETARG_OID(1);
-	char	   *filename = NULL;
-	DefElem    *force_not_null = NULL;
-	ListCell   *cell;
+	Datum optionArray = PG_GETARG_DATUM(0);
+	Oid optionContextId = PG_GETARG_OID(1);
+	List *optionList = untransformRelOptions(optionArray);
+	ListCell *optionCell = NULL;
+	bool filenameFound = false;
 
-	/*
-	 * Only superusers are allowed to set options of a orc_fdw foreign table.
-	 * This is because the filename is one of those options, and we don't want
-	 * non-superusers to be able to determine which file gets read.
-	 *
-	 * Putting this sort of permissions check in a validator is a bit of a
-	 * crock, but there doesn't seem to be any other place that can enforce
-	 * the check more cleanly.
-	 *
-	 * Note that the valid_options[] array disallows setting filename at any
-	 * options level other than foreign table --- otherwise there'd still be a
-	 * security hole.
-	 */
-	if (catalog == ForeignTableRelationId && !superuser())
-		ereport(ERROR,
-				(errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-				 errmsg("only superuser can change options of a orc_fdw foreign table")));
-
-	/*
-	 * Check that only options supported by orc_fdw, and allowed for the
-	 * current object type, are given.
-	 */
-	foreach(cell, options_list)
+	foreach(optionCell, optionList)
 	{
-		DefElem    *def = (DefElem *) lfirst(cell);
+		DefElem *optionDef = (DefElem *) lfirst(optionCell);
+		char *optionName = optionDef->defname;
+		bool optionValid = false;
 
-		if (!is_valid_option(def->defname, catalog))
+		int32 optionIndex = 0;
+		for (optionIndex = 0; optionIndex < ValidOptionCount; optionIndex++)
 		{
-			const struct OrcFdwOption *opt;
-			StringInfoData buf;
+			const OrcValidOption *validOption = &(ValidOptionArray[optionIndex]);
 
-			/*
-			 * Unknown option specified, complain about it. Provide a hint
-			 * with list of valid options for the object.
-			 */
-			initStringInfo(&buf);
-			for (opt = valid_options; opt->optname; opt++)
+			if ((optionContextId == validOption->optionContextId)
+					&& (strncmp(optionName, validOption->optionName, NAMEDATALEN) == 0))
 			{
-				if (catalog == opt->optcontext)
-					appendStringInfo(&buf, "%s%s", (buf.len > 0) ? ", " : "",
-									 opt->optname);
+				optionValid = true;
+				break;
 			}
+		}
+
+		/* if invalid option, display an informative error message */
+		if (!optionValid)
+		{
+			StringInfo optionNamesString = OptionNamesString(optionContextId);
 
 			ereport(ERROR,
-					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME),
-					 errmsg("invalid option \"%s\"", def->defname),
-					 buf.len > 0
-					 ? errhint("Valid options in this context are: %s",
-							   buf.data)
-				  : errhint("There are no valid options in this context.")));
+					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME), errmsg("invalid option \"%s\"", optionName), errhint("Valid options in this context are: %s", optionNamesString->data)));
 		}
 
-		/*
-		 * Separate out filename and force_not_null, since ProcessCopyOptions
-		 * won't accept them.  (force_not_null only comes in a boolean
-		 * per-column flavor here.)
-		 */
-		if (strcmp(def->defname, "filename") == 0)
+		if (strncmp(optionName, OPTION_NAME_FILENAME, NAMEDATALEN) == 0)
 		{
-			if (filename)
-				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
-			filename = defGetString(def);
-		}
-		else if (strcmp(def->defname, "force_not_null") == 0)
-		{
-			if (force_not_null)
-				ereport(ERROR,
-						(errcode(ERRCODE_SYNTAX_ERROR),
-						 errmsg("conflicting or redundant options")));
-			force_not_null = def;
-			/* Don't care what the value is, as long as it's a legal boolean */
-			(void) defGetBoolean(def);
+			filenameFound = true;
 		}
 	}
 
-	/*
-	 * Filename option is required for orc_fdw foreign tables.
-	 */
-	if (catalog == ForeignTableRelationId && filename == NULL)
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_DYNAMIC_PARAMETER_VALUE_NEEDED),
-				 errmsg("filename is required for orc_fdw foreign tables")));
-
-	PG_RETURN_VOID();
-}
-
-/*
- * Check if the provided option is one of the valid options.
- * context is the Oid of the catalog holding the object the option is for.
- */
-static bool
-is_valid_option(const char *option, Oid context)
-{
-	const struct OrcFdwOption *opt;
-
-	for (opt = valid_options; opt->optname; opt++)
+	if (optionContextId == ForeignTableRelationId)
 	{
-		if (context == opt->optcontext && strcmp(opt->optname, option) == 0)
-			return true;
-	}
-	return false;
-}
-
-/*
- * Fetch the options for a orc_fdw foreign table.
- *
- * We have to separate out "filename" from the other options because
- * it must not appear in the options list passed to the core COPY code.
- */
-static void
-fileGetOptions(Oid foreigntableid,
-			   char **filename, List **other_options)
-{
-	ForeignTable *table;
-	ForeignServer *server;
-	ForeignDataWrapper *wrapper;
-	List	   *options;
-	ListCell   *lc,
-			   *prev;
-
-	/*
-	 * Extract options from FDW objects.  We ignore user mappings because
-	 * orc_fdw doesn't have any options that can be specified there.
-	 *
-	 * (XXX Actually, given the current contents of valid_options[], there's
-	 * no point in examining anything except the foreign table's own options.
-	 * Simplify?)
-	 */
-	table = GetForeignTable(foreigntableid);
-	server = GetForeignServer(table->serverid);
-	wrapper = GetForeignDataWrapper(server->fdwid);
-
-	options = NIL;
-	options = list_concat(options, wrapper->options);
-	options = list_concat(options, server->options);
-	options = list_concat(options, table->options);
-	options = list_concat(options, get_orc_fdw_attribute_options(foreigntableid));
-
-	/*
-	 * Separate out the filename.
-	 */
-	*filename = NULL;
-	prev = NULL;
-	foreach(lc, options)
-	{
-		DefElem    *def = (DefElem *) lfirst(lc);
-
-		if (strcmp(def->defname, "filename") == 0)
+		if (!filenameFound)
 		{
-			*filename = defGetString(def);
-			options = list_delete_cell(options, lc, prev);
-			break;
+			ereport(ERROR,
+					(errcode(ERRCODE_FDW_DYNAMIC_PARAMETER_VALUE_NEEDED), errmsg("filename is required for orc_fdw foreign tables")));
 		}
-		prev = lc;
 	}
 
-	/*
-	 * The validator should have checked that a filename was included in the
-	 * options, but check again, just in case.
-	 */
-	if (*filename == NULL)
-		elog(ERROR, "filename is required for orc_fdw foreign tables");
-
-	*other_options = options;
+	PG_RETURN_VOID() ;
 }
 
 /*
- * Retrieve per-column generic options from pg_attribute and construct a list
- * of DefElems representing them.
- *
- * At the moment we only have "force_not_null", which should be combined into
- * a single DefElem listing all such columns, since that's what COPY expects.
+ * OptionNamesString finds all options that are valid for the current context,
+ * and concatenates these option names in a comma separated string. The function
+ * is unchanged from mongo_fdw.
  */
-static List *
-get_orc_fdw_attribute_options(Oid relid)
+static StringInfo OptionNamesString(Oid currentContextId)
 {
-	Relation	rel;
-	TupleDesc	tupleDesc;
-	AttrNumber	natts;
-	AttrNumber	attnum;
-	List	   *fnncolumns = NIL;
+	StringInfo optionNamesString = makeStringInfo();
+	bool firstOptionAppended = false;
 
-	rel = heap_open(relid, AccessShareLock);
-	tupleDesc = RelationGetDescr(rel);
-	natts = tupleDesc->natts;
-
-	/* Retrieve FDW options for all user-defined attributes. */
-	for (attnum = 1; attnum <= natts; attnum++)
+	int32 optionIndex = 0;
+	for (optionIndex = 0; optionIndex < ValidOptionCount; optionIndex++)
 	{
-		Form_pg_attribute attr = tupleDesc->attrs[attnum - 1];
-		List	   *options;
-		ListCell   *lc;
+		const OrcValidOption *validOption = &(ValidOptionArray[optionIndex]);
 
-		/* Skip dropped attributes. */
-		if (attr->attisdropped)
-			continue;
-
-		options = GetForeignColumnOptions(relid, attnum);
-		foreach(lc, options)
+		/* if option belongs to current context, append option name */
+		if (currentContextId == validOption->optionContextId)
 		{
-			DefElem    *def = (DefElem *) lfirst(lc);
-
-			if (strcmp(def->defname, "force_not_null") == 0)
+			if (firstOptionAppended)
 			{
-				if (defGetBoolean(def))
-				{
-					char	   *attname = pstrdup(NameStr(attr->attname));
-
-					fnncolumns = lappend(fnncolumns, makeString(attname));
-				}
+				appendStringInfoString(optionNamesString, ", ");
 			}
-			/* maybe in future handle other options here */
+
+			appendStringInfoString(optionNamesString, validOption->optionName);
+			firstOptionAppended = true;
 		}
 	}
 
-	heap_close(rel, AccessShareLock);
-
-	/* Return DefElem only when some column(s) have force_not_null */
-	if (fnncolumns != NIL)
-		return list_make1(makeDefElem("force_not_null", (Node *) fnncolumns));
-	else
-		return NIL;
+	return optionNamesString;
 }
 
 /*
- * fileGetForeignRelSize
- *		Obtain relation size estimates for a foreign table
+ * OrcGetForeignRelSize obtains relation size estimates for a foreign table and
+ * puts its estimate for row count into baserel->rows.
  */
-static void
-orcGetForeignRelSize(PlannerInfo *root,
-					  RelOptInfo *baserel,
-					  Oid foreigntableid)
+/* FIXME Use footer here */
+static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel,
+		Oid foreignTableId)
 {
-	OrcFdwPlanState *fdw_private;
+	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
+
+	double tupleCount = TupleCount(baserel, options->filename);
+	double rowSelectivity = clauselist_selectivity(root, baserel->baserestrictinfo, 0,
+			JOIN_INNER, NULL);
+
+	double outputRowCount = clamp_row_est(tupleCount * rowSelectivity);
+	baserel->rows = outputRowCount;
+}
+
+/*
+ * JsonGetForeignPaths creates possible access paths for a scan on the foreign
+ * table. Currently we only have one possible access path, which simply returns
+ * all records in the order they appear in the underlying file.
+ */
+static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
+{
+	Path *foreignScanPath = NULL;
+	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
+
+	BlockNumber pageCount = PageCount(options->filename);
+	double tupleCount = TupleCount(baserel, options->filename);
 
 	/*
-	 * Fetch options.  We only need filename at this point, but we might as
-	 * well get everything and not need to re-fetch it later in planning.
+	 * We estimate costs almost the same way as cost_seqscan(), thus assuming
+	 * that I/O costs are equivalent to a regular table file of the same size.
+	 * However, we take per-tuple CPU costs as 10x of a seqscan to account for
+	 * the cost of parsing records.
 	 */
-	fdw_private = (OrcFdwPlanState *) palloc(sizeof(OrcFdwPlanState));
-	fileGetOptions(foreigntableid,
-				   &fdw_private->filename, &fdw_private->options);
-	baserel->fdw_private = (void *) fdw_private;
+	double tupleParseCost = cpu_tuple_cost * ORC_TUPLE_COST_MULTIPLIER;
+	double tupleFilterCost = baserel->baserestrictcost.per_tuple;
+	double cpuCostPerTuple = tupleParseCost + tupleFilterCost;
+	double executionCost = (seq_page_cost * pageCount) + (cpuCostPerTuple * tupleCount);
 
-	/* Estimate relation size */
-	estimate_size(root, baserel, fdw_private);
+	double startupCost = baserel->baserestrictcost.startup;
+	double totalCost = startupCost + executionCost;
+
+	/* create a foreign path node and add it as the only possible path */
+	foreignScanPath = (Path *) create_foreignscan_path(root, baserel, baserel->rows,
+			startupCost, totalCost,
+			NIL, /* no known ordering */
+			NULL, /* not parameterized */
+			NIL); /* no fdw_private */
+
+	add_path(baserel, foreignScanPath);
 }
 
 /*
- * fileGetForeignPaths
- *		Create possible access paths for a scan on the foreign table
- *
- *		Currently we don't support any push-down feature, so there is only one
- *		possible access path, which simply returns all records in the order in
- *		the data file.
- */
-static void
-orcGetForeignPaths(PlannerInfo *root,
-					RelOptInfo *baserel,
-					Oid foreigntableid)
-{
-	OrcFdwPlanState *fdw_private = (OrcFdwPlanState *) baserel->fdw_private;
-	Cost		startup_cost;
-	Cost		total_cost;
-
-	/* Estimate costs */
-	estimate_costs(root, baserel, fdw_private,
-				   &startup_cost, &total_cost);
-
-	/* Create a ForeignPath node and add it as only possible path */
-	add_path(baserel, (Path *)
-			 create_foreignscan_path(root, baserel,
-									 baserel->rows,
-									 startup_cost,
-									 total_cost,
-									 NIL,		/* no pathkeys */
-									 NULL,		/* no outer rel either */
-									 NIL));		/* no fdw_private data */
-
-	/*
-	 * If data file was sorted, and we knew it somehow, we could insert
-	 * appropriate pathkeys into the ForeignPath node to tell the planner
-	 * that.
-	 */
-}
-
-/*
- * fileGetForeignPlan
- *		Create a ForeignScan plan node for scanning the foreign table
+ * OrcGetForeignPlan creates a ForeignScan plan node for scanning the foreign
+ * table. We also add the query column list to scan nodes private list, because
+ * we need it later for mapping columns.
  */
 static ForeignScan *
-orcGetForeignPlan(PlannerInfo *root,
-				   RelOptInfo *baserel,
-				   Oid foreigntableid,
-				   ForeignPath *best_path,
-				   List *tlist,
-				   List *scan_clauses)
+OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId,
+		ForeignPath *bestPath, List *targetList, List *scanClauses)
 {
-	Index		scan_relid = baserel->relid;
+	ForeignScan *foreignScan = NULL;
+	List *columnList = NULL;
+	List *foreignPrivateList = NIL;
 
 	/*
 	 * We have no native ability to evaluate restriction clauses, so we just
-	 * put all the scan_clauses into the plan node's qual list for the
-	 * executor to check.  So all we have to do here is strip RestrictInfo
-	 * nodes from the clauses and ignore pseudoconstants (which will be
-	 * handled elsewhere).
+	 * put all the scanClauses into the plan node's qual list for the executor
+	 * to check.
 	 */
-	scan_clauses = extract_actual_clauses(scan_clauses, false);
+	scanClauses = extract_actual_clauses(scanClauses, false);
 
-	/* Create the ForeignScan node */
-	return make_foreignscan(tlist,
-							scan_clauses,
-							scan_relid,
-							NIL,	/* no expressions to evaluate */
-							NIL);		/* no private state either */
+	/*
+	 * As an optimization, we only add columns that are present in the query to
+	 * the column mapping hash. To find these columns, we need baserel. We don't
+	 * have access to baserel in executor's callback functions, so we get the
+	 * column list here and put it into foreign scan node's private list.
+	 */
+	columnList = ColumnList(baserel);
+	foreignPrivateList = list_make1(columnList);
+
+	/* create the foreign scan node */
+	foreignScan = make_foreignscan(targetList, scanClauses, baserel->relid,
+	NIL, /* no expressions to evaluate */
+	foreignPrivateList);
+
+	return foreignScan;
+}
+
+/* OrcExplainForeignScan produces extra output for the Explain command. */
+static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState)
+{
+	Oid foreignTableId = RelationGetRelid(scanState->ss.ss_currentRelation);
+	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
+
+	ExplainPropertyText("Orc File", options->filename, explainState);
+
+	/* supress file size if we're not showing cost details */
+	if (explainState->costs)
+	{
+		struct stat statBuffer;
+
+		int statResult = stat(options->filename, &statBuffer);
+		if (statResult == 0)
+		{
+			ExplainPropertyLong("Json File Size", (long) statBuffer.st_size,
+					explainState);
+		}
+	}
+}
+
+/**
+ * Iteratres to the next stripe and initializes the record reader.
+ */
+void OrcGetNextStripe(OrcFdwExecState* execState)
+{
+	Footer* footer = execState->footer;
+	StripeInformation* stripeInfo = NULL;
+	StripeFooter* stripeFooter = NULL;
+
+	stripeInfo = footer->stripes[execState->nextStripeNumber];
+	execState->nextStripeNumber++;
+
+	stripeFooter = StripeFooterInit(execState->filename, stripeInfo,
+			&execState->compressionParameters);
+	FieldReaderInit(execState->recordReader, execState->filename, stripeInfo,
+			stripeFooter, &execState->postScript);
+
+	execState->stripeFooter = stripeFooter;
+	execState->currentStripeInfo = stripeInfo;
 }
 
 /*
- * fileExplainForeignScan
- *		Produce extra output for EXPLAIN
+ * OrcBeginForeignScan opens the underlying ORC file to read its PostScript and
+ * Footer to get information. Then it initializes record reader for reading.
+ * The function also creates a hash table that maps referenced column names to column index
+ * and type information.
  */
-static void
-orcExplainForeignScan(ForeignScanState *node, ExplainState *es)
+static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 {
-	char	   *filename;
-	List	   *options;
+	OrcFdwExecState *execState = NULL;
+	ForeignScan *foreignScan = NULL;
+	List *foreignPrivateList = NULL;
+	Oid foreignTableId = InvalidOid;
+	OrcFdwOptions *options = NULL;
+	List *columnList = NULL;
+	HTAB *columnMappingHash = NULL;
+	PostScript* postScript = NULL;
+	Footer* footer = NULL;
+	StripeFooter* stripeFooter = NULL;
+	StripeInformation *stripeInfo = NULL;
+	long postScriptOffset = 0;
+	FieldReader *recordReader = NULL;
 
-	/* Fetch options --- we only need filename at this point */
-	fileGetOptions(RelationGetRelid(node->ss.ss_currentRelation),
-				   &filename, &options);
-
-	ExplainPropertyText("Foreign File", filename, es);
-
-	/* Suppress file size if we're not showing cost details */
-	if (es->costs)
+	/* if Explain with no Analyze, do nothing */
+	if (executorFlags & EXEC_FLAG_EXPLAIN_ONLY)
 	{
-		struct stat stat_buf;
+		return;
+	}
 
-		if (stat(filename, &stat_buf) == 0)
-			ExplainPropertyLong("Foreign File Size", (long) stat_buf.st_size,
-								es);
+	foreignTableId = RelationGetRelid(scanState->ss.ss_currentRelation);
+	options = OrcGetOptions(foreignTableId);
+
+	foreignScan = (ForeignScan *) scanState->ss.ps.plan;
+	foreignPrivateList = (List *) foreignScan->fdw_private;
+
+	columnList = (List *) linitial(foreignPrivateList);
+	columnMappingHash = ColumnMappingHash(foreignTableId, columnList);
+
+	execState = (OrcFdwExecState *) palloc(sizeof(OrcFdwExecState));
+	execState->filename = options->filename;
+	execState->columnMappingHash = columnMappingHash;
+	execState->currentLineNumber = 0;
+	execState->nextStripeNumber = 0;
+
+	postScript = PostScriptInit(options->filename, &postScriptOffset,
+			&execState->compressionParameters);
+	execState->postScript = postScript;
+
+	footer = FileFooterInit(options->filename,
+			postScriptOffset - postScript->footerlength, postScript->footerlength,
+			&execState->compressionParameters);
+	execState->footer = footer;
+
+	recordReader = palloc(sizeof(FieldReader));
+
+	/* FIXME update selected fields */
+	FieldReaderAllocate(recordReader, footer, NULL);
+	execState->recordReader = recordReader;
+
+	OrcGetNextStripe(execState);
+	scanState->fdw_state = (void *) execState;
+}
+
+/*
+ * OrcIterateForeignScan reads the next record from the data file, converts it
+ * to PostgreSQL tuple, and stores the converted tuple into the ScanTupleSlot as
+ * a virtual tuple.
+ */
+static TupleTableSlot *
+OrcIterateForeignScan(ForeignScanState *scanState)
+{
+	OrcFdwExecState *execState = (OrcFdwExecState *) scanState->fdw_state;
+	TupleTableSlot *tupleSlot = scanState->ss.ss_ScanTupleSlot;
+	HTAB *columnMappingHash = execState->columnMappingHash;
+	bool endOfFile = false;
+	bool jsonObjectValid = false;
+	bool errorCountExceeded = false;
+	StripeInformation* currentStripe = execState->currentStripeInfo;
+
+	TupleDesc tupleDescriptor = tupleSlot->tts_tupleDescriptor;
+	Datum *columnValues = tupleSlot->tts_values;
+	bool *columnNulls = tupleSlot->tts_isnull;
+	int columnCount = tupleDescriptor->natts;
+
+	/* initialize all values for this row to null */
+	memset(columnValues, 0, columnCount * sizeof(Datum));
+	memset(columnNulls, true, columnCount * sizeof(bool));
+
+	ExecClearTuple(tupleSlot);
+
+	if (execState->currentLineNumber >= currentStripe->numberofrows)
+	{
+		/* End of stripe, read next one */
+		OrcGetNextStripe(execState);
+	}
+
+	FillTupleSlot(execState->recordReader, columnMappingHash, columnValues, columnNulls);
+	ExecStoreVirtualTuple(tupleSlot);
+
+	return tupleSlot;
+}
+
+/* OrcReScanForeignScan rescans the foreign table. */
+static void OrcReScanForeignScan(ForeignScanState *scanState)
+{
+	/* TODO update here to not to read ps/footer again for efficiency */
+	OrcEndForeignScan(scanState);
+	OrcBeginForeignScan(scanState, 0);
+}
+
+/*
+ * OrcEndForeignScan finishes scanning the foreign table, and frees the acquired
+ * resources.
+ */
+static void OrcEndForeignScan(ForeignScanState *scanState)
+{
+	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
+	if (executionState == NULL)
+	{
+		return;
+	}
+
+	FieldReaderFree(executionState->recordReader);
+	pfree(executionState->recordReader);
+
+	stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
+	footer__free_unpacked(executionState->footer, NULL);
+	post_script__free_unpacked(executionState->postScript, NULL);
+
+	if (executionState->columnMappingHash != NULL)
+	{
+		hash_destroy(executionState->columnMappingHash);
+	}
+
+	pfree(executionState);
+}
+
+/*
+ * OrcGetOptions returns the option values to be used when reading and parsing
+ * the orc file.
+ */
+static OrcFdwOptions *
+OrcGetOptions(Oid foreignTableId)
+{
+	OrcFdwOptions *jsonFdwOptions = NULL;
+	char *filename = NULL;
+	int32 maxErrorCount = 0;
+	char *maxErrorCountString = NULL;
+
+	filename = OrcGetOptionValue(foreignTableId, OPTION_NAME_FILENAME);
+
+	jsonFdwOptions = (OrcFdwOptions *) palloc0(sizeof(OrcFdwOptions));
+	jsonFdwOptions->filename = filename;
+
+	return jsonFdwOptions;
+}
+
+/*
+ * OrcGetOptionValue walks over foreign table and foreign server options, and
+ * looks for the option with the given name. If found, the function returns the
+ * option's value. This function is unchanged from mongo_fdw.
+ */
+static char *
+OrcGetOptionValue(Oid foreignTableId, const char *optionName)
+{
+	ForeignTable *foreignTable = NULL;
+	ForeignServer *foreignServer = NULL;
+	List *optionList = NIL;
+	ListCell *optionCell = NULL;
+	char *optionValue = NULL;
+
+	foreignTable = GetForeignTable(foreignTableId);
+	foreignServer = GetForeignServer(foreignTable->serverid);
+
+	optionList = list_concat(optionList, foreignTable->options);
+	optionList = list_concat(optionList, foreignServer->options);
+
+	foreach(optionCell, optionList)
+	{
+		DefElem *optionDef = (DefElem *) lfirst(optionCell);
+		char *optionDefName = optionDef->defname;
+
+		if (strncmp(optionDefName, optionName, NAMEDATALEN) == 0)
+		{
+			optionValue = defGetString(optionDef);
+			break;
+		}
+	}
+
+	return optionValue;
+}
+
+/* TupleCount estimates the number of base relation tuples in the given file. */
+static double TupleCount(RelOptInfo *baserel, const char *filename)
+{
+	double tupleCount = 0.0;
+
+//	BlockNumber pageCountEstimate = baserel->pages;
+//	if (pageCountEstimate > 0)
+//	{
+//		/*
+//		 * We have number of pages and number of tuples from pg_class (from a
+//		 * previous Analyze), so compute a tuples-per-page estimate and scale
+//		 * that by the current file size.
+//		 */
+//		double density = baserel->tuples / (double) pageCountEstimate;
+//		BlockNumber pageCount = PageCount(filename);
+//
+//		tupleCount = clamp_row_est(density * (double) pageCount);
+//	}
+//	else
+//	{
+//		/*
+//		 * Otherwise we have to fake it. We back into this estimate using the
+//		 * planner's idea of relation width, which may be inaccurate. For better
+//		 * estimates, users need to run Analyze.
+//		 */
+//		struct stat statBuffer;
+//		int tupleWidth = 0;
+//
+//		int statResult = stat(filename, &statBuffer);
+//		if (statResult < 0)
+//		{
+//			/* file may not be there at plan time, so use a default estimate */
+//			statBuffer.st_size = 10 * BLCKSZ;
+//		}
+//
+//		tupleWidth = MAXALIGN(baserel->width) + MAXALIGN(sizeof(HeapTupleHeaderData));
+//		tupleCount = clamp_row_est((double) statBuffer.st_size / (double) tupleWidth);
+//	}
+
+	return tupleCount;
+}
+
+/* PageCount calculates and returns the number of pages in a file. */
+static BlockNumber PageCount(const char *filename)
+{
+	BlockNumber pageCount = 0;
+	struct stat statBuffer;
+
+	/* if file doesn't exist at plan time, use default estimate for its size */
+	int statResult = stat(filename, &statBuffer);
+	if (statResult < 0)
+	{
+		statBuffer.st_size = 10 * BLCKSZ;
+	}
+
+	pageCount = (statBuffer.st_size + (BLCKSZ - 1)) / BLCKSZ;
+	if (pageCount < 1)
+	{
+		pageCount = 1;
+	}
+
+	return pageCount;
+}
+
+/*
+ * ColumnList takes in the planner's information about this foreign table. The
+ * function then finds all columns needed for query execution, including those
+ * used in projections, joins, and filter clauses, de-duplicates these columns,
+ * and returns them in a new list. This function is unchanged from mongo_fdw.
+ */
+static List *
+ColumnList(RelOptInfo *baserel)
+{
+	List *columnList = NIL;
+	List *neededColumnList = NIL;
+	AttrNumber columnIndex = 1;
+	AttrNumber columnCount = baserel->max_attr;
+	List *targetColumnList = baserel->reltargetlist;
+	List *restrictInfoList = baserel->baserestrictinfo;
+	ListCell *restrictInfoCell = NULL;
+
+	/* first add the columns used in joins and projections */
+	neededColumnList = list_copy(targetColumnList);
+
+	/* then walk over all restriction clauses, and pull up any used columns */
+	foreach(restrictInfoCell, restrictInfoList)
+	{
+		RestrictInfo *restrictInfo = (RestrictInfo *) lfirst(restrictInfoCell);
+		Node *restrictClause = (Node *) restrictInfo->clause;
+		List *clauseColumnList = NIL;
+
+		/* recursively pull up any columns used in the restriction clause */
+		clauseColumnList = pull_var_clause(restrictClause, PVC_RECURSE_AGGREGATES,
+				PVC_RECURSE_PLACEHOLDERS);
+
+		neededColumnList = list_union(neededColumnList, clauseColumnList);
+	}
+
+	/* walk over all column definitions, and de-duplicate column list */
+	for (columnIndex = 1; columnIndex <= columnCount; columnIndex++)
+	{
+		ListCell *neededColumnCell = NULL;
+		Var *column = NULL;
+
+		/* look for this column in the needed column list */
+		foreach(neededColumnCell, neededColumnList)
+		{
+			Var *neededColumn = (Var *) lfirst(neededColumnCell);
+			if (neededColumn->varattno == columnIndex)
+			{
+				column = neededColumn;
+				break;
+			}
+		}
+
+		if (column != NULL)
+		{
+			columnList = lappend(columnList, column);
+		}
+	}
+
+	return columnList;
+}
+
+/*
+ * ColumnMappingHash creates a hash table that maps column names to column index
+ * and types. This table helps us quickly translate JSON document key/values to
+ * corresponding PostgreSQL columns. This function is unchanged from mongo_fdw.
+ */
+static HTAB *
+ColumnMappingHash(Oid foreignTableId, List *columnList)
+{
+	HTAB *columnMappingHash = NULL;
+	ListCell *columnCell = NULL;
+	const long hashTableSize = 2048;
+
+	/* create hash table */
+	HASHCTL hashInfo;
+	memset(&hashInfo, 0, sizeof(hashInfo));
+	hashInfo.keysize = NAMEDATALEN;
+	hashInfo.entrysize = sizeof(ColumnMapping);
+	hashInfo.hash = string_hash;
+	hashInfo.hcxt = CurrentMemoryContext;
+
+	columnMappingHash = hash_create("Column Mapping Hash", hashTableSize, &hashInfo,
+			(HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT));
+	Assert(columnMappingHash != NULL);
+
+	foreach(columnCell, columnList)
+	{
+		Var *column = (Var *) lfirst(columnCell);
+		AttrNumber columnId = column->varattno;
+
+		ColumnMapping *columnMapping = NULL;
+		char *columnName = NULL;
+		bool handleFound = false;
+		void *hashKey = NULL;
+
+		columnName = get_relid_attribute_name(foreignTableId, columnId);
+		hashKey = (void *) columnName;
+
+		columnMapping = (ColumnMapping *) hash_search(columnMappingHash, hashKey,
+				HASH_ENTER, &handleFound);
+		Assert(columnMapping != NULL);
+
+		columnMapping->columnIndex = columnId - 1;
+		columnMapping->columnTypeId = column->vartype;
+		columnMapping->columnTypeMod = column->vartypmod;
+		columnMapping->columnArrayTypeId = get_element_type(column->vartype);
+	}
+
+	return columnMappingHash;
+}
+
+static void FillTupleSlot(FieldReader* recordReader, HTAB *columnMappingHash,
+		Datum *columnValues, bool *columnNulls)
+{
+	uint32 jsonKeyCount = jsonObject->u.object.len;
+	const char **jsonKeyArray = jsonObject->u.object.keys;
+	yajl_val *jsonValueArray = jsonObject->u.object.values;
+	uint32 jsonKeyIndex = 0;
+
+	/* loop over key/value pairs of the json object */
+	for (jsonKeyIndex = 0; jsonKeyIndex < jsonKeyCount; jsonKeyIndex++)
+	{
+		const char *jsonKey = jsonKeyArray[jsonKeyIndex];
+		yajl_val jsonValue = jsonValueArray[jsonKeyIndex];
+
+		ColumnMapping *columnMapping = NULL;
+		Oid columnTypeId = InvalidOid;
+		Oid columnArrayTypeId = InvalidOid;
+		Oid columnTypeMod = InvalidOid;
+		bool compatibleTypes = false;
+		bool handleFound = false;
+		const char *jsonFullKey = NULL;
+		void *hashKey = NULL;
+
+		if (jsonObjectKey != NULL)
+		{
+			/*
+			 * For fields in nested json objects, we use fully qualified field
+			 * name to check the column mapping.
+			 */
+			StringInfo jsonFullKeyString = makeStringInfo();
+			appendStringInfo(jsonFullKeyString, "%s.%s", jsonObjectKey, jsonKey);
+			jsonFullKey = jsonFullKeyString->data;
+		}
+		else
+		{
+			jsonFullKey = jsonKey;
+		}
+
+		/* recurse into nested objects */
+		if (YAJL_IS_OBJECT(jsonValue))
+		{
+			FillTupleSlot(jsonValue, jsonFullKey, columnMappingHash, columnValues,
+					columnNulls);
+			continue;
+		}
+
+		/* look up the corresponding column for this json key */
+		hashKey = (void *) jsonFullKey;
+		columnMapping = (ColumnMapping *) hash_search(columnMappingHash, hashKey,
+				HASH_FIND, &handleFound);
+
+		/* if no corresponding column or null json value, continue */
+		if (columnMapping == NULL || YAJL_IS_NULL(jsonValue))
+		{
+			continue;
+		}
+
+		/* check if columns have compatible types */
+		columnTypeId = columnMapping->columnTypeId;
+		columnArrayTypeId = columnMapping->columnArrayTypeId;
+		columnTypeMod = columnMapping->columnTypeMod;
+
+		if (OidIsValid(columnArrayTypeId))
+		{
+			compatibleTypes = YAJL_IS_ARRAY(jsonValue);
+		}
+		else
+		{
+			compatibleTypes = ColumnTypesCompatible(jsonValue, columnTypeId);
+		}
+
+		/* if types are incompatible, leave this column null */
+		if (!compatibleTypes)
+		{
+			continue;
+		}
+
+		/* fill in corresponding column value and null flag */
+		if (OidIsValid(columnArrayTypeId))
+		{
+			uint32 columnIndex = columnMapping->columnIndex;
+			columnValues[columnIndex] = ColumnValueArray(jsonValue, columnArrayTypeId,
+					columnTypeMod);
+			columnNulls[columnIndex] = false;
+		}
+		else
+		{
+			uint32 columnIndex = columnMapping->columnIndex;
+			columnValues[columnIndex] = ColumnValue(jsonValue, columnTypeId,
+					columnTypeMod);
+			columnNulls[columnIndex] = false;
+		}
 	}
 }
 
 /*
- * fileBeginForeignScan
- *		Initiate access to the file by creating CopyState
+ * ColumnTypesCompatible checks if the given json value can be converted to the
+ * given PostgreSQL type.
  */
-static void
-orcBeginForeignScan(ForeignScanState *node, int eflags)
+static bool ColumnTypesCompatible(yajl_val jsonValue, Oid columnTypeId)
 {
-	char	   *filename;
-	List	   *options;
-	CopyState	cstate;
-	OrcFdwExecutionState *festate;
+	bool compatibleTypes = false;
 
-	/*
-	 * Do nothing in EXPLAIN (no ANALYZE) case.  node->fdw_state stays NULL.
-	 */
-	if (eflags & EXEC_FLAG_EXPLAIN_ONLY)
-		return;
+	/* we consider the PostgreSQL column type as authoritative */
+	switch (columnTypeId)
+	{
+	case INT2OID:
+	case INT4OID:
+	case INT8OID:
+	case FLOAT4OID:
+	case FLOAT8OID:
+	case NUMERICOID:
+	{
+		if (YAJL_IS_NUMBER(jsonValue))
+		{
+			compatibleTypes = true;
+		}
+		break;
+	}
+	case BOOLOID:
+	{
+		if (YAJL_IS_TRUE(jsonValue) || YAJL_IS_FALSE(jsonValue))
+		{
+			compatibleTypes = true;
+		}
+		break;
+	}
+	case BPCHAROID:
+	case VARCHAROID:
+	case TEXTOID:
+	{
+		if (YAJL_IS_STRING(jsonValue))
+		{
+			compatibleTypes = true;
+		}
+		break;
+	}
+	case DATEOID:
+	case TIMESTAMPOID:
+	case TIMESTAMPTZOID:
+	{
+		if (YAJL_IS_STRING(jsonValue))
+		{
+			const char *stringValue = (char *) YAJL_GET_STRING(jsonValue);
 
-	/* Fetch options of foreign table */
-	fileGetOptions(RelationGetRelid(node->ss.ss_currentRelation),
-				   &filename, &options);
-
-	/*
-	 * Create CopyState from FDW options.  We always acquire all columns, so
-	 * as to match the expected ScanTupleSlot signature.
-	 */
-	cstate = BeginCopyFrom(node->ss.ss_currentRelation,
-						   filename,
-						   NIL,
-						   options);
-
-	/*
-	 * Save state in node->fdw_state.  We must save enough information to call
-	 * BeginCopyFrom() again.
-	 */
-	festate = (OrcFdwExecutionState *) palloc(sizeof(OrcFdwExecutionState));
-	festate->filename = filename;
-	festate->options = options;
-	festate->cstate = cstate;
-
-	node->fdw_state = (void *) festate;
-}
-
-/*
- * fileIterateForeignScan
- *		Read next record from the data file and store it into the
- *		ScanTupleSlot as a virtual tuple
- */
-static TupleTableSlot *
-orcIterateForeignScan(ForeignScanState *node)
-{
-	OrcFdwExecutionState *festate = (OrcFdwExecutionState *) node->fdw_state;
-	TupleTableSlot *slot = node->ss.ss_ScanTupleSlot;
-	bool		found;
-	ErrorContextCallback errcontext;
-
-	/* Set up callback to identify error line number. */
-	errcontext.callback = CopyFromErrorCallback;
-	errcontext.arg = (void *) festate->cstate;
-	errcontext.previous = error_context_stack;
-	error_context_stack = &errcontext;
-
-	/*
-	 * The protocol for loading a virtual tuple into a slot is first
-	 * ExecClearTuple, then fill the values/isnull arrays, then
-	 * ExecStoreVirtualTuple.  If we don't find another row in the file, we
-	 * just skip the last step, leaving the slot empty as required.
-	 *
-	 * We can pass ExprContext = NULL because we read all columns from the
-	 * file, so no need to evaluate default expressions.
-	 *
-	 * We can also pass tupleOid = NULL because we don't allow oids for
-	 * foreign tables.
-	 */
-	ExecClearTuple(slot);
-	found = NextCopyFrom(festate->cstate, NULL,
-						 slot->tts_values, slot->tts_isnull,
-						 NULL);
-	if (found)
-		ExecStoreVirtualTuple(slot);
-
-	/* Remove error callback. */
-	error_context_stack = errcontext.previous;
-
-	return slot;
-}
-
-/*
- * fileReScanForeignScan
- *		Rescan table, possibly with new parameters
- */
-static void
-orcReScanForeignScan(ForeignScanState *node)
-{
-	OrcFdwExecutionState *festate = (OrcFdwExecutionState *) node->fdw_state;
-
-	EndCopyFrom(festate->cstate);
-
-	festate->cstate = BeginCopyFrom(node->ss.ss_currentRelation,
-									festate->filename,
-									NIL,
-									festate->options);
-}
-
-/*
- * fileEndForeignScan
- *		Finish scanning foreign table and dispose objects used for this scan
- */
-static void
-orcEndForeignScan(ForeignScanState *node)
-{
-	OrcFdwExecutionState *festate = (OrcFdwExecutionState *) node->fdw_state;
-
-	/* if festate is NULL, we are in EXPLAIN; nothing to do */
-	if (festate)
-		EndCopyFrom(festate->cstate);
-}
-
-/*
- * fileAnalyzeForeignTable
- *		Test whether analyzing this foreign table is supported
- */
-static bool
-orcAnalyzeForeignTable(Relation relation,
-						AcquireSampleRowsFunc *func,
-						BlockNumber *totalpages)
-{
-	char	   *filename;
-	List	   *options;
-	struct stat stat_buf;
-
-	/* Fetch options of foreign table */
-	fileGetOptions(RelationGetRelid(relation), &filename, &options);
-
-	/*
-	 * Get size of the file.  (XXX if we fail here, would it be better to just
-	 * return false to skip analyzing the table?)
-	 */
-	if (stat(filename, &stat_buf) < 0)
+			bool validDateTimeFormat = ValidDateTimeFormat(stringValue);
+			if (validDateTimeFormat)
+			{
+				compatibleTypes = true;
+			}
+		}
+		break;
+	}
+	default:
+	{
+		/*
+		 * We currently error out on other data types. Some types such as
+		 * byte arrays are easy to add, but they need testing. Other types
+		 * such as money or inet, do not have equivalents in JSON.
+		 */
 		ereport(ERROR,
-				(errcode_for_file_access(),
-				 errmsg("could not stat file \"%s\": %m",
-						filename)));
+				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert json type to column type"), errhint("column type: %u", (uint32) columnTypeId)));
+		break;
+	}
+	}
+
+	return compatibleTypes;
+}
+
+/*
+ * ValidDateTimeFormat checks if the given dateTimeString can be parsed and decoded
+ * as a date/timestamp. The algorithm used here is based on date_in, timestamp_in,
+ * and timestamptz_in functions.
+ */
+static bool ValidDateTimeFormat(const char *dateTimeString)
+{
+	bool validDateTimeFormat = false;
+	char workBuffer[MAXDATELEN + 1];
+	char *fieldArray[MAXDATEFIELDS];
+	int fieldTypeArray[MAXDATEFIELDS];
+	int fieldCount = 0;
+
+	int parseError = ParseDateTime(dateTimeString, workBuffer, sizeof(workBuffer),
+			fieldArray, fieldTypeArray,
+			MAXDATEFIELDS, &fieldCount);
+	if (parseError == 0)
+	{
+		int dateType = 0;
+		struct pg_tm dateTime;
+		fsec_t fractionalSecond = 0;
+		int timezone = 0;
+
+		int decodeError = DecodeDateTime(fieldArray, fieldTypeArray, fieldCount,
+				&dateType, &dateTime, &fractionalSecond, &timezone);
+		if (decodeError == 0)
+		{
+			/*
+			 * We only accept DTK_DATE, DTK_EPOCH, DTK_LATE, and DTK_EARLY date
+			 * types. For other date types, input functions raise an error.
+			 */
+			if (dateType == DTK_DATE || dateType == DTK_EPOCH || dateType == DTK_LATE
+					|| dateType == DTK_EARLY)
+			{
+				validDateTimeFormat = true;
+			}
+		}
+	}
+
+	return validDateTimeFormat;
+}
+
+/*
+ * ColumnValueArray uses array element type id to read the current array pointed
+ * to by the jsonArray, and converts each array element with matching type to
+ * the corresponding PostgreSQL datum. Then, the function constructs an array
+ * datum from element datums, and returns the array datum. This function ignores
+ * values that aren't type compatible with valueTypeId.
+ */
+static Datum ColumnValueArray(yajl_val jsonArray, Oid valueTypeId, Oid valueTypeMod)
+{
+	Datum columnValueDatum = 0;
+	ArrayType *columnValueObject = NULL;
+	bool typeByValue = false;
+	char typeAlignment = 0;
+	int16 typeLength = 0;
+
+	uint32 jsonValueCount = jsonArray->u.array.len;
+	yajl_val *jsonValueArray = jsonArray->u.array.values;
+
+	/* allocate enough room for datum array's maximum possible size */
+	Datum *datumArray = palloc0(jsonValueCount * sizeof(Datum));
+	uint32 datumArraySize = 0;
+
+	uint32 jsonValueIndex = 0;
+	for (jsonValueIndex = 0; jsonValueIndex < jsonValueCount; jsonValueIndex++)
+	{
+		yajl_val jsonValue = jsonValueArray[jsonValueIndex];
+
+		bool compatibleTypes = ColumnTypesCompatible(jsonValue, valueTypeId);
+		if (compatibleTypes)
+		{
+			datumArray[datumArraySize] = ColumnValue(jsonValue, valueTypeId,
+					valueTypeMod);
+			datumArraySize++;
+		}
+	}
+
+	get_typlenbyvalalign(valueTypeId, &typeLength, &typeByValue, &typeAlignment);
+	columnValueObject = construct_array(datumArray, datumArraySize, valueTypeId,
+			typeLength, typeByValue, typeAlignment);
+
+	columnValueDatum = PointerGetDatum(columnValueObject);
+	return columnValueDatum;
+}
+
+/*
+ * ColumnValue uses column type information to read the current value pointed to
+ * by jsonValue, and converts this value to the corresponding PostgreSQL datum.
+ * The function then returns this datum.
+ */
+static Datum ColumnValue(Field* field, Oid columnTypeId, int32 columnTypeMod)
+{
+	Datum columnValue = 0;
+
+	switch (columnTypeId)
+	{
+	case INT2OID:
+	{
+		const char *value = YAJL_GET_NUMBER(jsonValue);
+		columnValue = DirectFunctionCall1(int2in, CStringGetDatum(value));
+//		PG_RETURN_INT16(field->)
+		break;
+	}
+	case INT4OID:
+	{
+		const char *value = YAJL_GET_NUMBER(jsonValue);
+		columnValue = DirectFunctionCall1(int4in, CStringGetDatum(value));
+		break;
+	}
+	case INT8OID:
+	{
+		const char *value = YAJL_GET_NUMBER(jsonValue);
+		columnValue = DirectFunctionCall1(int8in, CStringGetDatum(value));
+		break;
+	}
+	case FLOAT4OID:
+	{
+		const char *value = YAJL_GET_NUMBER(jsonValue);
+		columnValue = DirectFunctionCall1(float4in, CStringGetDatum(value));
+		break;
+	}
+	case FLOAT8OID:
+	{
+		const char *value = YAJL_GET_NUMBER(jsonValue);
+		columnValue = DirectFunctionCall1(float8in, CStringGetDatum(value));
+		break;
+	}
+	case NUMERICOID:
+	{
+		const char *value = YAJL_GET_NUMBER(jsonValue);
+		columnValue = DirectFunctionCall3(numeric_in, CStringGetDatum(value),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(columnTypeMod));
+		break;
+	}
+	case BOOLOID:
+	{
+		bool value = YAJL_IS_TRUE(jsonValue);
+		columnValue = BoolGetDatum(value);
+		break;
+	}
+	case BPCHAROID:
+	{
+		const char *value = YAJL_GET_STRING(jsonValue);
+		columnValue = DirectFunctionCall3(bpcharin, CStringGetDatum(value),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(columnTypeMod));
+		break;
+	}
+	case VARCHAROID:
+	{
+		const char *value = YAJL_GET_STRING(jsonValue);
+		columnValue = DirectFunctionCall3(varcharin, CStringGetDatum(value),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(columnTypeMod));
+		break;
+	}
+	case TEXTOID:
+	{
+		const char *value = YAJL_GET_STRING(jsonValue);
+		columnValue = CStringGetTextDatum(value);
+		break;
+	}
+	case DATEOID:
+	{
+		const char *value = YAJL_GET_STRING(jsonValue);
+		columnValue = DirectFunctionCall1(date_in, CStringGetDatum(value));
+		break;
+	}
+	case TIMESTAMPOID:
+	{
+		const char *value = YAJL_GET_STRING(jsonValue);
+		columnValue = DirectFunctionCall3(timestamp_in, CStringGetDatum(value),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(columnTypeMod));
+		break;
+	}
+	case TIMESTAMPTZOID:
+	{
+		const char *value = YAJL_GET_STRING(jsonValue);
+		columnValue = DirectFunctionCall3(timestamptz_in, CStringGetDatum(value),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(columnTypeMod));
+		break;
+	}
+	default:
+	{
+		ereport(ERROR,
+				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert json type to column type"), errhint("column type: %u", (uint32) columnTypeId)));
+		break;
+	}
+	}
+
+	return columnValue;
+}
+
+/*
+ * JsonAnalyzeForeignTable sets the total page count and the function pointer
+ * used to acquire a random sample of rows from the foreign file.
+ */
+static bool OrcAnalyzeForeignTable(Relation relation,
+		AcquireSampleRowsFunc *acquireSampleRowsFunc, BlockNumber *totalPageCount)
+{
+	Oid foreignTableId = RelationGetRelid(relation);
+	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
+	BlockNumber pageCount = 0;
+	struct stat statBuffer;
+
+	int statResult = stat(options->filename, &statBuffer);
+	if (statResult < 0)
+	{
+		ereport(ERROR,
+				(errcode_for_file_access(), errmsg("could not stat file \"%s\": %m", options->filename)));
+	}
 
 	/*
-	 * Convert size to pages.  Must return at least 1 so that we can tell
-	 * later on that pg_class.relpages is not default.
+	 * Our estimate should return at least 1 so that we can tell later on that
+	 * pg_class.relpages is not default.
 	 */
-	*totalpages = (stat_buf.st_size + (BLCKSZ - 1)) / BLCKSZ;
-	if (*totalpages < 1)
-		*totalpages = 1;
+	pageCount = (statBuffer.st_size + (BLCKSZ - 1)) / BLCKSZ;
+	if (pageCount < 1)
+	{
+		pageCount = 1;
+	}
 
-	*func = file_acquire_sample_rows;
+	(*totalPageCount) = pageCount;
+	(*acquireSampleRowsFunc) = OrcAcquireSampleRows;
 
 	return true;
 }
 
 /*
- * Estimate size of a foreign table.
+ * JsonAcquireSampleRows acquires a random sample of rows from the foreign
+ * table. Selected rows are returned in the caller allocated sampleRows array,
+ * which must have at least target row count entries. The actual number of rows
+ * selected is returned as the function result. We also count the number of rows
+ * in the collection and return it in total row count. We also always set dead
+ * row count to zero.
  *
- * The main result is returned in baserel->rows.  We also set
- * fdw_private->pages and fdw_private->ntuples for later use in the cost
- * calculation.
+ * Note that the returned list of rows does not always follow their actual order
+ * in the JSON file. Therefore, correlation estimates derived later could be
+ * inaccurate, but that's OK. We currently don't use correlation estimates (the
+ * planner only pays attention to correlation for index scans).
  */
-static void
-estimate_size(PlannerInfo *root, RelOptInfo *baserel,
-			  OrcFdwPlanState *fdw_private)
+static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
+		int targetRowCount, double *totalRowCount, double *totalDeadRowCount)
 {
-	struct stat stat_buf;
-	BlockNumber pages;
-	double		ntuples;
-	double		nrows;
+	int sampleRowCount = 0;
+	double rowCount = 0.0;
+	double rowCountToSkip = -1; /* -1 means not set yet */
+	double selectionState = 0;
+	MemoryContext oldContext = CurrentMemoryContext;
+	MemoryContext tupleContext = NULL;
+	Datum *columnValues = NULL;
+	bool *columnNulls = NULL;
+	TupleTableSlot *scanTupleSlot = NULL;
+	List *columnList = NIL;
+	List *foreignPrivateList = NULL;
+	ForeignScanState *scanState = NULL;
+	ForeignScan *foreignScan = NULL;
+	char *relationName = NULL;
+	int executorFlags = 0;
 
-	/*
-	 * Get size of the file.  It might not be there at plan time, though, in
-	 * which case we have to use a default estimate.
-	 */
-	if (stat(fdw_private->filename, &stat_buf) < 0)
-		stat_buf.st_size = 10 * BLCKSZ;
+	TupleDesc tupleDescriptor = RelationGetDescr(relation);
+	int columnCount = tupleDescriptor->natts;
+	Form_pg_attribute *attributes = tupleDescriptor->attrs;
 
-	/*
-	 * Convert size to pages for use in I/O cost estimate later.
-	 */
-	pages = (stat_buf.st_size + (BLCKSZ - 1)) / BLCKSZ;
-	if (pages < 1)
-		pages = 1;
-	fdw_private->pages = pages;
-
-	/*
-	 * Estimate the number of tuples in the file.
-	 */
-	if (baserel->pages > 0)
+	/* create list of columns of the relation */
+	int columnIndex = 0;
+	for (columnIndex = 0; columnIndex < columnCount; columnIndex++)
 	{
-		/*
-		 * We have # of pages and # of tuples from pg_class (that is, from a
-		 * previous ANALYZE), so compute a tuples-per-page estimate and scale
-		 * that by the current file size.
-		 */
-		double		density;
+		Var *column = (Var *) palloc0(sizeof(Var));
 
-		density = baserel->tuples / (double) baserel->pages;
-		ntuples = clamp_row_est(density * (double) pages);
+		/* only assign required fields for column mapping hash */
+		column->varattno = columnIndex + 1;
+		column->vartype = attributes[columnIndex]->atttypid;
+		column->vartypmod = attributes[columnIndex]->atttypmod;
+
+		columnList = lappend(columnList, column);
 	}
-	else
-	{
-		/*
-		 * Otherwise we have to fake it.  We back into this estimate using the
-		 * planner's idea of the relation width; which is bogus if not all
-		 * columns are being read, not to mention that the text representation
-		 * of a row probably isn't the same size as its internal
-		 * representation.	Possibly we could do something better, but the
-		 * real answer to anyone who complains is "ANALYZE" ...
-		 */
-		int			tuple_width;
 
-		tuple_width = MAXALIGN(baserel->width) +
-			MAXALIGN(sizeof(HeapTupleHeaderData));
-		ntuples = clamp_row_est((double) stat_buf.st_size /
-								(double) tuple_width);
-	}
-	fdw_private->ntuples = ntuples;
+	/* setup foreign scan plan node */
+	foreignPrivateList = list_make1(columnList);
+	foreignScan = makeNode(ForeignScan);
+	foreignScan->fdw_private = foreignPrivateList;
 
-	/*
-	 * Now estimate the number of rows returned by the scan after applying the
-	 * baserestrictinfo quals.
-	 */
-	nrows = ntuples *
-		clauselist_selectivity(root,
-							   baserel->baserestrictinfo,
-							   0,
-							   JOIN_INNER,
-							   NULL);
+	/* set up tuple slot */
+	columnValues = (Datum *) palloc0(columnCount * sizeof(Datum));
+	columnNulls = (bool *) palloc0(columnCount * sizeof(bool));
+	scanTupleSlot = MakeTupleTableSlot();
+	scanTupleSlot->tts_tupleDescriptor = tupleDescriptor;
+	scanTupleSlot->tts_values = columnValues;
+	scanTupleSlot->tts_isnull = columnNulls;
 
-	nrows = clamp_row_est(nrows);
+	/* setup scan state */
+	scanState = makeNode(ForeignScanState);
+	scanState->ss.ss_currentRelation = relation;
+	scanState->ss.ps.plan = (Plan *) foreignScan;
+	scanState->ss.ss_ScanTupleSlot = scanTupleSlot;
 
-	/* Save the output-rows estimate for the planner */
-	baserel->rows = nrows;
-}
-
-/*
- * Estimate costs of scanning a foreign table.
- *
- * Results are returned in *startup_cost and *total_cost.
- */
-static void
-estimate_costs(PlannerInfo *root, RelOptInfo *baserel,
-			   OrcFdwPlanState *fdw_private,
-			   Cost *startup_cost, Cost *total_cost)
-{
-	BlockNumber pages = fdw_private->pages;
-	double		ntuples = fdw_private->ntuples;
-	Cost		run_cost = 0;
-	Cost		cpu_per_tuple;
+	OrcBeginForeignScan(scanState, executorFlags);
 
 	/*
-	 * We estimate costs almost the same way as cost_seqscan(), thus assuming
-	 * that I/O costs are equivalent to a regular table file of the same size.
-	 * However, we take per-tuple CPU costs as 10x of a seqscan, to account
-	 * for the cost of parsing records.
+	 * Use per-tuple memory context to prevent leak of memory used to read and
+	 * parse rows from the file using ReadLineFromFile and FillTupleSlot.
 	 */
-	run_cost += seq_page_cost * pages;
+	tupleContext = AllocSetContextCreate(CurrentMemoryContext,
+			"orc_fdw temporary context",
+			ALLOCSET_DEFAULT_MINSIZE,
+			ALLOCSET_DEFAULT_INITSIZE,
+			ALLOCSET_DEFAULT_MAXSIZE);
 
-	*startup_cost = baserel->baserestrictcost.startup;
-	cpu_per_tuple = cpu_tuple_cost * 10 + baserel->baserestrictcost.per_tuple;
-	run_cost += cpu_per_tuple * ntuples;
-	*total_cost = *startup_cost + run_cost;
-}
+	/* prepare for sampling rows */
+	selectionState = anl_init_selection_state(targetRowCount);
 
-/*
- * file_acquire_sample_rows -- acquire a random sample of rows from the table
- *
- * Selected rows are returned in the caller-allocated array rows[],
- * which must have at least targrows entries.
- * The actual number of rows selected is returned as the function result.
- * We also count the total number of rows in the file and return it into
- * *totalrows.	Note that *totaldeadrows is always set to 0.
- *
- * Note that the returned list of rows is not always in order by physical
- * position in the file.  Therefore, correlation estimates derived later
- * may be meaningless, but it's OK because we don't use the estimates
- * currently (the planner only pays attention to correlation for indexscans).
- */
-static int
-file_acquire_sample_rows(Relation onerel, int elevel,
-						 HeapTuple *rows, int targrows,
-						 double *totalrows, double *totaldeadrows)
-{
-	int			numrows = 0;
-	double		rowstoskip = -1;	/* -1 means not set yet */
-	double		rstate;
-	TupleDesc	tupDesc;
-	Datum	   *values;
-	bool	   *nulls;
-	bool		found;
-	char	   *filename;
-	List	   *options;
-	CopyState	cstate;
-	ErrorContextCallback errcontext;
-	MemoryContext oldcontext = CurrentMemoryContext;
-	MemoryContext tupcontext;
-
-	Assert(onerel);
-	Assert(targrows > 0);
-
-	tupDesc = RelationGetDescr(onerel);
-	values = (Datum *) palloc(tupDesc->natts * sizeof(Datum));
-	nulls = (bool *) palloc(tupDesc->natts * sizeof(bool));
-
-	/* Fetch options of foreign table */
-	fileGetOptions(RelationGetRelid(onerel), &filename, &options);
-
-	/*
-	 * Create CopyState from FDW options.
-	 */
-	cstate = BeginCopyFrom(onerel, filename, NIL, options);
-
-	/*
-	 * Use per-tuple memory context to prevent leak of memory used to read
-	 * rows from the file with Copy routines.
-	 */
-	tupcontext = AllocSetContextCreate(CurrentMemoryContext,
-									   "orc_fdw temporary context",
-									   ALLOCSET_DEFAULT_MINSIZE,
-									   ALLOCSET_DEFAULT_INITSIZE,
-									   ALLOCSET_DEFAULT_MAXSIZE);
-
-	/* Prepare for sampling rows */
-	rstate = anl_init_selection_state(targrows);
-
-	/* Set up callback to identify error line number. */
-	errcontext.callback = CopyFromErrorCallback;
-	errcontext.arg = (void *) cstate;
-	errcontext.previous = error_context_stack;
-	error_context_stack = &errcontext;
-
-	*totalrows = 0;
-	*totaldeadrows = 0;
 	for (;;)
 	{
-		/* Check for user-requested abort or sleep */
+		/* check for user-requested abort or sleep */
 		vacuum_delay_point();
 
-		/* Fetch next row */
-		MemoryContextReset(tupcontext);
-		MemoryContextSwitchTo(tupcontext);
+		memset(columnValues, 0, columnCount * sizeof(Datum));
+		memset(columnNulls, true, columnCount * sizeof(bool));
 
-		found = NextCopyFrom(cstate, NULL, values, nulls, NULL);
+		MemoryContextReset(tupleContext);
+		MemoryContextSwitchTo(tupleContext);
 
-		MemoryContextSwitchTo(oldcontext);
+		/* read the next record */
+		OrcIterateForeignScan(scanState);
 
-		if (!found)
+		MemoryContextSwitchTo(oldContext);
+
+		/* if there are no more records to read, break */
+		if (scanTupleSlot->tts_isempty)
+		{
 			break;
+		}
 
 		/*
-		 * The first targrows sample rows are simply copied into the
-		 * reservoir.  Then we start replacing tuples in the sample until we
+		 * The first targetRowCount sample rows are simply copied into the
+		 * reservoir. Then we start replacing tuples in the sample until we
 		 * reach the end of the relation. This algorithm is from Jeff Vitter's
 		 * paper (see more info in commands/analyze.c).
 		 */
-		if (numrows < targrows)
+		if (sampleRowCount < targetRowCount)
 		{
-			rows[numrows++] = heap_form_tuple(tupDesc, values, nulls);
+			sampleRows[sampleRowCount++] = heap_form_tuple(tupleDescriptor, columnValues,
+					columnNulls);
 		}
 		else
 		{
 			/*
 			 * t in Vitter's paper is the number of records already processed.
-			 * If we need to compute a new S value, we must use the
-			 * not-yet-incremented value of totalrows as t.
+			 * If we need to compute a new S value, we must use the "not yet
+			 * incremented" value of rowCount as t.
 			 */
-			if (rowstoskip < 0)
-				rowstoskip = anl_get_next_S(*totalrows, targrows, &rstate);
+			if (rowCountToSkip < 0)
+			{
+				rowCountToSkip = anl_get_next_S(rowCount, targetRowCount,
+						&selectionState);
+			}
 
-			if (rowstoskip <= 0)
+			if (rowCountToSkip <= 0)
 			{
 				/*
 				 * Found a suitable tuple, so save it, replacing one old tuple
-				 * at random
+				 * at random.
 				 */
-				int			k = (int) (targrows * anl_random_fract());
+				int rowIndex = (int) (targetRowCount * anl_random_fract());
+				Assert(rowIndex >= 0);Assert(rowIndex < targetRowCount);
 
-				Assert(k >= 0 && k < targrows);
-				heap_freetuple(rows[k]);
-				rows[k] = heap_form_tuple(tupDesc, values, nulls);
+				heap_freetuple(sampleRows[rowIndex]);
+				sampleRows[rowIndex] = heap_form_tuple(tupleDescriptor, columnValues,
+						columnNulls);
 			}
 
-			rowstoskip -= 1;
+			rowCountToSkip -= 1;
 		}
 
-		*totalrows += 1;
+		rowCount += 1;
 	}
 
-	/* Remove error callback. */
-	error_context_stack = errcontext.previous;
+	/* clean up */
+	MemoryContextDelete(tupleContext);
+	pfree(columnValues);
+	pfree(columnNulls);
 
-	/* Clean up. */
-	MemoryContextDelete(tupcontext);
+	OrcEndForeignScan(scanState);
 
-	EndCopyFrom(cstate);
+	/* emit some interesting relation info */
+	relationName = RelationGetRelationName(relation);
+	ereport(logLevel,
+			(errmsg("\"%s\": file contains %.0f rows; %d rows in sample", relationName, rowCount, sampleRowCount)));
 
-	pfree(values);
-	pfree(nulls);
+	(*totalRowCount) = rowCount;
+	(*totalDeadRowCount) = 0;
 
-	/*
-	 * Emit some interesting relation info
-	 */
-	ereport(elevel,
-			(errmsg("\"%s\": file contains %.0f rows; "
-					"%d rows in sample",
-					RelationGetRelationName(onerel),
-					*totalrows, numrows)));
-
-	return numrows;
+	return sampleRowCount;
 }

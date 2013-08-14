@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include "orc.pb-c.h"
+#include "util.h"
 #include "recordReader.h"
 
 struct tm BASE_TIMESTAMP =
@@ -200,7 +201,6 @@ static int IntegerReaderInit(Type__Kind kind, StreamReader* intState)
 		if (bytesRead < 0)
 		{
 			/* stream is too short */
-			fprintf(stderr, "Error while reading var-len int from stream!\n");
 			return -1;
 		}
 	}
@@ -217,7 +217,7 @@ int StreamReaderFree(StreamReader* streamReader)
 	{
 		if (FileStreamFree(streamReader->stream))
 		{
-			fprintf(stderr, "Error deleting previous compressed file stream\n");
+			LogError("Error deleting previous compressed file stream\n");
 			return -1;
 		}
 		streamReader->stream = NULL;
@@ -244,7 +244,7 @@ int StreamReaderInit(StreamReader* streamReader, Type__Kind streamKind, char* fi
 	{
 		if (FileStreamFree(streamReader->stream))
 		{
-			fprintf(stderr, "Error deleting previous compressed file stream\n");
+			LogError("Error deleting previous compressed file stream\n");
 			return -1;
 		}
 		streamReader->stream = NULL;
@@ -293,7 +293,6 @@ static char ReadBoolean(StreamReader* booleanReaderState)
 			if (initResult)
 			{
 				/* error while reading from input stream */
-				fprintf(stderr, "Error while re-initializing the boolean reader\n");
 				return -1;
 			}
 		}
@@ -340,7 +339,6 @@ static int ReadByte(StreamReader* byteReaderState, uint8_t *result)
 		if (initResult)
 		{
 			/* error while reading from input stream */
-			fprintf(stderr, "Error while re-initializing the byte reader\n");
 			return -1;
 		}
 	}
@@ -385,7 +383,6 @@ static int ReadInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 		if (initResult)
 		{
 			/* error while reading from input stream */
-			fprintf(stderr, "Error while re-initializing the integer reader\n");
 			return -1;
 		}
 	}
@@ -397,7 +394,6 @@ static int ReadInteger(Type__Kind kind, StreamReader* intReaderState, uint64_t *
 		if (bytesRead <= 0)
 		{
 			/* there have to be bytes left on the stream */
-			fprintf(stderr, "Byte stream ended prematurely!");
 			return -1;
 		}
 		*result = intReaderState->data;
