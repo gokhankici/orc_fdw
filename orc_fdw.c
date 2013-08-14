@@ -55,6 +55,7 @@ struct OrcFdwOption
 static const struct OrcFdwOption valid_options[] = {
 	/* File options */
 	{"filename", ForeignTableRelationId},
+	{"force_not_null", AttributeRelationId},
 
 	/*
 	 * force_quote is not supported by orc_fdw because it's for COPY TO.
@@ -170,7 +171,6 @@ orc_fdw_validator(PG_FUNCTION_ARGS)
 	Oid			catalog = PG_GETARG_OID(1);
 	char	   *filename = NULL;
 	DefElem    *force_not_null = NULL;
-	List	   *other_options = NIL;
 	ListCell   *cell;
 
 	/*
@@ -248,14 +248,7 @@ orc_fdw_validator(PG_FUNCTION_ARGS)
 			/* Don't care what the value is, as long as it's a legal boolean */
 			(void) defGetBoolean(def);
 		}
-		else
-			other_options = lappend(other_options, def);
 	}
-
-	/*
-	 * Now apply the core COPY code's validation logic for more checks.
-	 */
-	ProcessCopyOptions(NULL, true, other_options);
 
 	/*
 	 * Filename option is required for orc_fdw foreign tables.
