@@ -866,6 +866,11 @@ int FieldReaderFree(FieldReader* reader)
 	StreamReaderFree(&reader->lengthReader);
 	StreamReaderFree(&reader->lengthReader);
 
+	if (reader->fieldReader == NULL)
+	{
+		return 0;
+	}
+
 	switch (reader->kind)
 	{
 	case FIELD_TYPE__KIND__STRUCT:

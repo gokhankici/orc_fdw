@@ -97,7 +97,7 @@ PostScript* PostScriptInit(char* orcFileName, long* postScriptOffset, Compressio
 	parameters->compressionBlockSize = postScript->has_compressionblocksize ? postScript->compressionblocksize : 0;
 	parameters->compressionKind = postScript->has_compression ? postScript->compression : 0;
 
-	fclose(orcFile);
+	FreeFile(orcFile);
 
 	return postScript;
 }

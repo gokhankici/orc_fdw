@@ -318,6 +318,7 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 	Footer* footer = execState->footer;
 	StripeInformation* stripeInfo = NULL;
 	StripeFooter* stripeFooter = NULL;
+	int result = 0;
 
 	if (execState->nextStripeNumber < footer->n_stripes)
 	{
@@ -326,8 +327,13 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 
 		stripeFooter = StripeFooterInit(execState->filename, stripeInfo, &execState->compressionParameters);
 
-		FieldReaderInit(execState->recordReader, execState->filename, stripeInfo, stripeFooter,
+		result = FieldReaderInit(execState->recordReader, execState->filename, stripeInfo, stripeFooter,
 				&execState->compressionParameters);
+
+		if (result)
+		{
+			elog(ERROR, "Cannot read the next stripe information\n");
+		}
 
 		if (execState->stripeFooter)
 		{
@@ -348,6 +354,7 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
 	PostgresQueryInfo query;
 	PostgresColumnInfo* queryColumns = NULL;
 	int iterator = 0;
+	int result = 0;
 
 	/* allocate enough space for info */
 	query.selectedColumns = palloc(sizeof(PostgresColumnInfo) * footer->types[0]->n_subtypes);
@@ -365,7 +372,12 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
 	query.noOfSelectedColumns = iterator;
 
 	/* Allocate space for column readers */
-	FieldReaderAllocate(recordReader, footer, &query);
+	result = FieldReaderAllocate(recordReader, footer, &query);
+
+	if (result)
+	{
+		elog(ERROR, "Error while allocating initializing record reader\n");
+	}
 
 	/* Use next stripe to initialize record reader */
 	OrcGetNextStripe(execState);
@@ -381,6 +393,7 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
  */
 static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 {
+
 	OrcFdwExecState *execState = NULL;
 	ForeignScan *foreignScan = NULL;
 	List *foreignPrivateList = NULL;
@@ -413,10 +426,22 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	execState->currentStripeInfo = NULL;
 
 	postScript = PostScriptInit(options->filename, &postScriptOffset, &execState->compressionParameters);
+
+	if (postScript == NULL)
+	{
+		elog(ERROR, "Cannot read postscript from the file\n");
+	}
+
 	execState->postScript = postScript;
 
 	footer = FileFooterInit(options->filename, postScriptOffset - postScript->footerlength, postScript->footerlength,
 			&execState->compressionParameters);
+
+	if (footer == NULL)
+	{
+		elog(ERROR, "Cannot read file footer from the file\n");
+	}
+
 	execState->footer = footer;
 
 	execState->recordReader = palloc(sizeof(FieldReader));
@@ -696,11 +721,13 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *
 	Field field;
 	int length = 0;
 	int isNull = 0;
+	int i = 0;
 
 	structFieldReader = (StructFieldReader*) recordReader->fieldReader;
 
 	for (columnNo = 0; columnNo < structFieldReader->noOfFields; ++columnNo)
 	{
+		elog(WARNING, "Column data is read\n");
 		fieldReader = structFieldReader->fields[columnNo];
 		if (!fieldReader->required)
 		{
@@ -715,19 +742,54 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *
 			free(field.listItemSizes);
 		}
 
-		if (!isNull)
+		if (isNull == 0)
 		{
 			if (fieldReader->kind == FIELD_TYPE__KIND__LIST)
 			{
+				if (field.isItemNull == NULL || field.list == NULL)
+				{
+					elog(ERROR, "THESE SHOULDN'T BE (NULL)\n");
+				}
+
+				elog(WARNING, "[\n");
+				for (i = 0; i < length; i++)
+				{
+					if (field.isItemNull[i])
+					{
+						elog(WARNING, "(NIL)\n");
+					}
+					else
+					{
+						if (field.listItemSizes == NULL)
+						{
+							PrintFieldValueAsWarning(&(field.list[i]),
+									((ListFieldReader*) fieldReader->fieldReader)->itemReader.kind, 0);
+
+						}
+						else
+						{
+							PrintFieldValueAsWarning(&(field.list[i]),
+									((ListFieldReader*) fieldReader->fieldReader)->itemReader.kind,
+									field.listItemSizes[i]);
+						}
+					}
+				}
+				elog(WARNING, "]\n");
 				listFieldReader = (ListFieldReader*) fieldReader->fieldReader;
-				columnValues[columnNo] = ColumnValueArray(&field, listFieldReader->itemReader.kind,listFieldReader->itemReader.psqlKind, length);
+				columnValues[columnNo] = ColumnValueArray(&field, listFieldReader->itemReader.kind,
+						listFieldReader->itemReader.psqlKind, length);
 				columnNulls[columnNo] = false;
 			}
 			else
 			{
+				PrintFieldValueAsWarning(&field.value, fieldReader->kind, length);
 				columnValues[columnNo] = ColumnValue(&field.value, fieldReader->kind);
 				columnNulls[columnNo] = false;
 			}
+		}
+		else if (isNull == -1)
+		{
+			elog(ERROR, "Error while decoding column data\n");
 		}
 	}
 

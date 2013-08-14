@@ -21,6 +21,7 @@
 #define max(x,y) (((x) < (y)) ? (y) : (x))
 
 void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int length);
+void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int length);
 
 int TimespecToStr(char* timespecBuffer, struct timespec *ts);
 
