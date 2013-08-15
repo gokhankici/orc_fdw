@@ -402,7 +402,6 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
  */
 static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 {
-
 	OrcFdwExecState *execState = NULL;
 	ForeignScan *foreignScan = NULL;
 	List *foreignPrivateList = NULL;
@@ -455,7 +454,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 
 	execState->footer = footer;
 
-	execState->recordReader = palloc(sizeof(FieldReader));
+	execState->recordReader = malloc(sizeof(FieldReader));
 
 	OrcInitializeFieldReader(execState, columnList);
 
@@ -502,8 +501,6 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 	}
 
-	elog(WARNING, "Reading row %d", execState->currentLineNumber);
-
 	FillTupleSlot(execState->recordReader, columnValues, columnNulls);
 	execState->currentLineNumber++;
 
@@ -526,34 +523,34 @@ static void OrcReScanForeignScan(ForeignScanState *scanState)
  */
 static void OrcEndForeignScan(ForeignScanState *scanState)
 {
-	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
-	if (executionState == NULL)
-	{
-		return;
-	}
-
-	if (executionState->recordReader)
-	{
-		FieldReaderFree(executionState->recordReader);
-		pfree(executionState->recordReader);
-	}
-
-	if (executionState->stripeFooter)
-	{
-		stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
-	}
-
-	if (executionState->footer)
-	{
-		footer__free_unpacked(executionState->footer, NULL);
-	}
-
-	if (executionState->postScript)
-	{
-		post_script__free_unpacked(executionState->postScript, NULL);
-	}
-
-	pfree(executionState);
+//	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
+//	if (executionState == NULL)
+//	{
+//		return;
+//	}
+//
+//	if (executionState->recordReader)
+//	{
+//		FieldReaderFree(executionState->recordReader);
+//		free(executionState->recordReader);
+//	}
+//
+//	if (executionState->stripeFooter)
+//	{
+//		stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
+//	}
+//
+//	if (executionState->footer)
+//	{
+//		footer__free_unpacked(executionState->footer, NULL);
+//	}
+//
+//	if (executionState->postScript)
+//	{
+//		post_script__free_unpacked(executionState->postScript, NULL);
+//	}
+//
+//	pfree(executionState);
 }
 
 /*

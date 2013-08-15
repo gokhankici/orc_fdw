@@ -7,7 +7,8 @@
 #include "recordReader.h"
 
 struct tm BASE_TIMESTAMP =
-{ .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 3, .tm_mon = 0, .tm_year = 115 };
+{ .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 3, .tm_mon = 0,
+		.tm_year = 115 };
 
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
 static void StructFieldReaderFree(StructFieldReader* reader);
@@ -236,8 +237,8 @@ int StreamReaderFree(StreamReader* streamReader)
  *
  * @return 0 for success, 1 for failure
  */
-int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, char* fileName, long offset, long limit,
-		CompressionParameters* parameters)
+int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind,
+		char* fileName, long offset, long limit, CompressionParameters* parameters)
 {
 
 	if (streamReader->stream != NULL)
@@ -250,8 +251,8 @@ int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, cha
 		streamReader->stream = NULL;
 	}
 
-	streamReader->stream = FileStreamInit(fileName, offset, limit, parameters->compressionBlockSize,
-			parameters->compressionKind);
+	streamReader->stream = FileStreamInit(fileName, offset, limit,
+			parameters->compressionBlockSize, parameters->compressionKind);
 
 	switch (streamKind)
 	{
@@ -369,7 +370,8 @@ static int ReadByte(StreamReader* byteReaderState, uint8_t *result)
  *
  * @return 0 for success, -1 for failure
  */
-static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState, uint64_t *result)
+static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState,
+		uint64_t *result)
 {
 	int bytesRead = 0;
 	char step = 0;
@@ -500,7 +502,8 @@ static int ReadBinary(StreamReader* binaryReaderState, uint8_t* data, int length
  */
 static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* length)
 {
-	PrimitiveFieldReader* primitiveReader = (PrimitiveFieldReader*) fieldReader->fieldReader;
+	PrimitiveFieldReader* primitiveReader =
+			(PrimitiveFieldReader*) fieldReader->fieldReader;
 
 	StreamReader* presentStreamReader = &fieldReader->presentBitReader;
 	StreamReader* booleanStreamReader = NULL;
@@ -516,6 +519,8 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 	uint64_t seconds = 0;
 	uint64_t nanoSeconds = 0;
 	uint64_t data64 = 0;
+	float floatData = 0;
+	double doubleData = 0;
 	int dictionaryIterator = 0;
 	int newNanos = 0;
 	char isPresent = 0;
@@ -550,24 +555,30 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 		break;
 	case FIELD_TYPE__KIND__FLOAT:
 		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
-		result = ReadFloat(fpStreamReader, &value->floatValue);
+		result = ReadFloat(fpStreamReader, &floatData);
+		value->floatValue = floatData;
 		break;
 	case FIELD_TYPE__KIND__DOUBLE:
 		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
-		result = ReadDouble(fpStreamReader, &value->doubleValue);
+		result = ReadDouble(fpStreamReader, &doubleData);
+		value->doubleValue = doubleData;
 		break;
 	case FIELD_TYPE__KIND__STRING:
 		if (primitiveReader->dictionary == NULL)
 		{
 			/* if dictionary is NULL, read the whole dictionary to the memory */
-			primitiveReader->dictionary = alloc(sizeof(char*) * primitiveReader->dictionarySize);
-			primitiveReader->wordLength = alloc(sizeof(int) * primitiveReader->dictionarySize);
+			primitiveReader->dictionary =
+			alloc(sizeof(char*) * primitiveReader->dictionarySize);
+			primitiveReader->wordLength =
+			alloc(sizeof(int) * primitiveReader->dictionarySize);
 
 			integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
 			binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
 
 			/* read the dictionary */
-			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize; ++dictionaryIterator)
+			for (dictionaryIterator = 0;
+					dictionaryIterator < primitiveReader->dictionarySize;
+					++dictionaryIterator)
 			{
 				result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
 
@@ -578,7 +589,8 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 
 				primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
 				primitiveReader->dictionary[dictionaryIterator] = alloc(wordLength + 1);
-				result = ReadBinary(binaryReader, (uint8_t*) primitiveReader->dictionary[dictionaryIterator],
+				result = ReadBinary(binaryReader,
+						(uint8_t*) primitiveReader->dictionary[dictionaryIterator],
 						(int) wordLength);
 				primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
 
@@ -656,7 +668,8 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 	char isPresent = 0;
 	FieldValue* value = NULL;
 
-	if (fieldReader->hasPresentBitReader && (isPresent = ReadBoolean(presentStreamReader)) == 0)
+	if (fieldReader->hasPresentBitReader
+			&& (isPresent = ReadBoolean(presentStreamReader)) == 0)
 	{
 		/* not present, return 1 as null */
 		return 1;
@@ -863,7 +876,7 @@ int FieldReaderFree(FieldReader* reader)
 {
 	ListFieldReader* listReader = NULL;
 
-	StreamReaderFree(&reader->lengthReader);
+	StreamReaderFree(&reader->presentBitReader);
 	StreamReaderFree(&reader->lengthReader);
 
 	if (reader->fieldReader == NULL)
