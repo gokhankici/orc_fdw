@@ -287,6 +287,10 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 				listItemReader->fieldReader = malloc(sizeof(PrimitiveFieldReader));
 				primitiveReader = listItemReader->fieldReader;
 
+				primitiveReader->dictionary = NULL;
+				primitiveReader->dictionarySize = 0;
+				primitiveReader->wordLength = NULL;
+
 				for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
 				{
 					primitiveReader->readers[streamIterator].stream = NULL;

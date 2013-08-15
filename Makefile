@@ -20,5 +20,7 @@ else
 subdir = contrib/orc_fdw
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
+# Removes optimization flag for debugging
+CFLAGS:=$(filter-out -O2,$(CFLAGS))
 include $(top_srcdir)/contrib/contrib-global.mk
 endif
