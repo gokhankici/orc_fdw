@@ -45,16 +45,16 @@
 #include "utils/memutils.h"
 #include "utils/rel.h"
 
+#include "orc.pb-c.h"
 #include "fileReader.h"
 
 /* Local functions forward declarations */
 static StringInfo OptionNamesString(Oid currentContextId);
 
-static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel,
-		Oid foreignTableId);
+static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId);
 static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId);
-static ForeignScan * OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel,
-		Oid foreignTableId, ForeignPath *bestPath, List *targetList, List *scanClauses);
+static ForeignScan * OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId,
+		ForeignPath *bestPath, List *targetList, List *scanClauses);
 static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState);
 static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags);
 static TupleTableSlot * OrcIterateForeignScan(ForeignScanState *scanState);
@@ -66,21 +66,19 @@ static char * OrcGetOptionValue(Oid foreignTableId, const char *optionName);
 static double TupleCount(RelOptInfo *baserel, const char *filename);
 static BlockNumber PageCount(const char *filename);
 static List * ColumnList(RelOptInfo *baserel);
-static bool OrcAnalyzeForeignTable(Relation relation,
-		AcquireSampleRowsFunc *acquireSampleRowsFunc, BlockNumber *totalPageCount);
-static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
-		int targetRowCount, double *totalRowCount, double *totalDeadRowCount);
+static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRowsFunc,
+		BlockNumber *totalPageCount);
+static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows, int targetRowCount,
+		double *totalRowCount, double *totalDeadRowCount);
 
 /**
  * Helper functions
  */
 static void OrcGetNextStripe(OrcFdwExecState* execState);
-static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
-		bool *columnNulls);
+static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls);
 
-static Datum ColumnValue(FieldValue* fieldValue, FieldType__Kind kind);
-static Datum ColumnValueArray(Field* field, FieldType__Kind itemKind, Oid valueTypeId,
-		int listSize);
+static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod);
+static Datum ColumnValueArray(Field* field, Oid valueTypeId, int columnTypeMod, int listSize);
 
 /* Declarations for dynamic loading */
 PG_MODULE_MAGIC
@@ -207,14 +205,12 @@ static StringInfo OptionNamesString(Oid currentContextId)
  * puts its estimate for row count into baserel->rows.
  */
 /* FIXME Use footer here ? */
-static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel,
-		Oid foreignTableId)
+static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
 {
 	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
 
 	double tupleCount = TupleCount(baserel, options->filename);
-	double rowSelectivity = clauselist_selectivity(root, baserel->baserestrictinfo, 0,
-			JOIN_INNER, NULL);
+	double rowSelectivity = clauselist_selectivity(root, baserel->baserestrictinfo, 0, JOIN_INNER, NULL);
 
 	double outputRowCount = clamp_row_est(tupleCount * rowSelectivity);
 	baserel->rows = outputRowCount;
@@ -248,11 +244,10 @@ static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid forei
 	double totalCost = startupCost + executionCost;
 
 	/* create a foreign path node and add it as the only possible path */
-	foreignScanPath = (Path *) create_foreignscan_path(root, baserel, baserel->rows,
-			startupCost, totalCost,
-			NIL, /* no known ordering */
-			NULL, /* not parameterized */
-			NIL); /* no fdw_private */
+	foreignScanPath = (Path *) create_foreignscan_path(root, baserel, baserel->rows, startupCost, totalCost,
+	NIL, /* no known ordering */
+	NULL, /* not parameterized */
+	NIL); /* no fdw_private */
 
 	add_path(baserel, foreignScanPath);
 }
@@ -263,8 +258,8 @@ static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid forei
  * we need it later for mapping columns.
  */
 static ForeignScan *
-OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId,
-		ForeignPath *bestPath, List *targetList, List *scanClauses)
+OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId, ForeignPath *bestPath, List *targetList,
+		List *scanClauses)
 {
 	ForeignScan *foreignScan = NULL;
 	List *columnList = NULL;
@@ -310,8 +305,7 @@ static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *exp
 		int statResult = stat(options->filename, &statBuffer);
 		if (statResult == 0)
 		{
-			ExplainPropertyLong("Json File Size", (long) statBuffer.st_size,
-					explainState);
+			ExplainPropertyLong("Json File Size", (long) statBuffer.st_size, explainState);
 		}
 	}
 }
@@ -332,11 +326,10 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 		stripeInfo = footer->stripes[execState->nextStripeNumber];
 		execState->nextStripeNumber++;
 
-		stripeFooter = StripeFooterInit(execState->filename, stripeInfo,
-				&execState->compressionParameters);
+		stripeFooter = StripeFooterInit(execState->filename, stripeInfo, &execState->compressionParameters);
 
-		result = FieldReaderInit(execState->recordReader, execState->filename, stripeInfo,
-				stripeFooter, &execState->compressionParameters);
+		result = FieldReaderInit(execState->recordReader, execState->filename, stripeInfo, stripeFooter,
+				&execState->compressionParameters);
 
 		if (result)
 		{
@@ -365,8 +358,7 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
 	int result = 0;
 
 	/* allocate enough space for info */
-	query.selectedColumns =
-	palloc(sizeof(PostgresColumnInfo) * footer->types[0]->n_subtypes);
+	query.selectedColumns = palloc(sizeof(PostgresColumnInfo) * footer->types[0]->n_subtypes);
 	queryColumns = query.selectedColumns;
 
 	foreach(columnCell, columns)
@@ -374,6 +366,7 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
 		column = (Var *) lfirst(columnCell);
 		queryColumns[iterator].columnIndex = column->varattno - 1;
 		queryColumns[iterator].columnTypeId = column->vartype;
+		queryColumns[iterator].columnTypeMod = column->vartypmod;
 		queryColumns[iterator].columnArrayTypeId = get_element_type(column->vartype);
 		iterator++;
 	}
@@ -433,8 +426,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	execState->stripeFooter = NULL;
 	execState->currentStripeInfo = NULL;
 
-	postScript = PostScriptInit(options->filename, &postScriptOffset,
-			&execState->compressionParameters);
+	postScript = PostScriptInit(options->filename, &postScriptOffset, &execState->compressionParameters);
 
 	if (postScript == NULL)
 	{
@@ -443,8 +435,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 
 	execState->postScript = postScript;
 
-	footer = FileFooterInit(options->filename,
-			postScriptOffset - postScript->footerlength, postScript->footerlength,
+	footer = FileFooterInit(options->filename, postScriptOffset - postScript->footerlength, postScript->footerlength,
 			&execState->compressionParameters);
 
 	if (footer == NULL)
@@ -512,7 +503,6 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 /* OrcReScanForeignScan rescans the foreign table. */
 static void OrcReScanForeignScan(ForeignScanState *scanState)
 {
-	elog(WARNING,"rescanning\n");
 	/* TODO update here to not to read ps/footer again for efficiency */
 	OrcEndForeignScan(scanState);
 	OrcBeginForeignScan(scanState, 0);
@@ -560,8 +550,6 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 		post_script__free_unpacked(executionState->postScript, NULL);
 		executionState->postScript = NULL;
 	}
-
-	elog(WARNING,"ending\n");
 }
 
 /*
@@ -709,8 +697,7 @@ ColumnList(RelOptInfo *baserel)
 		List *clauseColumnList = NIL;
 
 		/* recursively pull up any columns used in the restriction clause */
-		clauseColumnList = pull_var_clause(restrictClause, PVC_RECURSE_AGGREGATES,
-				PVC_RECURSE_PLACEHOLDERS);
+		clauseColumnList = pull_var_clause(restrictClause, PVC_RECURSE_AGGREGATES, PVC_RECURSE_PLACEHOLDERS);
 
 		neededColumnList = list_union(neededColumnList, clauseColumnList);
 	}
@@ -741,8 +728,7 @@ ColumnList(RelOptInfo *baserel)
 	return columnList;
 }
 
-static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
-		bool *columnNulls)
+static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls)
 {
 	FieldReader* fieldReader = NULL;
 	StructFieldReader* structFieldReader = NULL;
@@ -774,9 +760,7 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
 				}
 
 				listFieldReader = (ListFieldReader*) fieldReader->fieldReader;
-				columnValues[columnNo] = ColumnValueArray(&field,
-						listFieldReader->itemReader.kind,
-						listFieldReader->itemReader.psqlKind, length);
+				columnValues[columnNo] = ColumnValueArray(&field, listFieldReader->itemReader.psqlKind, listFieldReader->itemReader.columnTypeMod, length);
 				columnNulls[columnNo] = false;
 
 				if (field.list)
@@ -788,7 +772,8 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
 			}
 			else
 			{
-				columnValues[columnNo] = ColumnValue(&field.value, fieldReader->kind);
+				columnValues[columnNo] = ColumnValue(&field.value, fieldReader->psqlKind,
+						fieldReader->columnTypeMod);
 				columnNulls[columnNo] = false;
 			}
 		}
@@ -807,8 +792,7 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
  * datum from element datums, and returns the array datum. This function ignores
  * values that aren't type compatible with valueTypeId.
  */
-static Datum ColumnValueArray(Field* field, FieldType__Kind itemKind, Oid valueTypeId,
-		int listSize)
+static Datum ColumnValueArray(Field* field, Oid valueTypeId, int columnTypeMod, int listSize)
 {
 	Datum columnValueDatum = 0;
 	ArrayType *columnValueObject = NULL;
@@ -828,15 +812,15 @@ static Datum ColumnValueArray(Field* field, FieldType__Kind itemKind, Oid valueT
 	{
 		if (!isItemNull[itemIndex])
 		{
-			datumArray[itemIndex] = ColumnValue(itemFieldValue, itemKind);
+			datumArray[itemIndex] = ColumnValue(itemFieldValue, valueTypeId, columnTypeMod);
 		}
 		itemFieldValue++;
 		datumArraySize++;
 	}
 
 	get_typlenbyvalalign(valueTypeId, &typeLength, &typeByValue, &typeAlignment);
-	columnValueObject = construct_array(datumArray, datumArraySize, valueTypeId,
-			typeLength, typeByValue, typeAlignment);
+	columnValueObject = construct_array(datumArray, datumArraySize, valueTypeId, typeLength, typeByValue,
+			typeAlignment);
 
 	columnValueDatum = PointerGetDatum(columnValueObject);
 	return columnValueDatum;
@@ -847,57 +831,75 @@ static Datum ColumnValueArray(Field* field, FieldType__Kind itemKind, Oid valueT
  * by jsonValue, and converts this value to the corresponding PostgreSQL datum.
  * The function then returns this datum.
  */
-static Datum ColumnValue(FieldValue* fieldValue, FieldType__Kind kind)
+static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod)
 {
 	Datum columnValue = 0;
+	double doubleValue = 0;
 
-	switch (kind)
+	switch (psqlType)
 	{
-	case FIELD_TYPE__KIND__SHORT:
+	case INT2OID:
 	{
 		columnValue = Int16GetDatum(fieldValue->value64);
 		break;
 	}
-	case FIELD_TYPE__KIND__INT:
+	case INT4OID:
 	{
 		columnValue = Int32GetDatum(fieldValue->value64);
 		break;
 	}
-	case FIELD_TYPE__KIND__LONG:
+	case INT8OID:
 	{
-		columnValue = Int64GetDatum(fieldValue->value64);
+		columnValue = Int16GetDatum(fieldValue->value64);
 		break;
 	}
-	case FIELD_TYPE__KIND__FLOAT:
+	case FLOAT4OID:
 	{
-		columnValue = Float4GetDatum(fieldValue->floatValue);
+		doubleValue = fieldValue->floatValue;
+		columnValue = Float8GetDatum(doubleValue);
 		break;
 	}
-	case FIELD_TYPE__KIND__DOUBLE:
+	case FLOAT8OID:
 	{
 		columnValue = Float8GetDatum(fieldValue->doubleValue);
 		break;
 	}
-	case FIELD_TYPE__KIND__BOOLEAN:
+	case NUMERICOID:
+	{
+		ereport(ERROR, (errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("Numeric type is not supported")));
+		break;
+	}
+	case BOOLOID:
 	{
 		columnValue = BoolGetDatum(fieldValue->value8);
 		break;
 	}
-	case FIELD_TYPE__KIND__STRING:
+	case BPCHAROID:
 	{
-		columnValue = DirectFunctionCall1(textin, CStringGetDatum(fieldValue->binary));
+		columnValue = DirectFunctionCall3(bpcharin, CStringGetDatum(fieldValue->binary),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(columnTypeMod));
 		break;
 	}
-	case FIELD_TYPE__KIND__TIMESTAMP:
+	case VARCHAROID:
 	{
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert to column type")));
+		columnValue = DirectFunctionCall3(varcharin, CStringGetDatum(fieldValue->binary),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(columnTypeMod));
 		break;
 	}
+	case TEXTOID:
+	{
+		columnValue = CStringGetTextDatum(fieldValue->binary);
+		break;
+	}
+	case DATEOID:
+	case TIMESTAMPOID:
+	case TIMESTAMPTZOID:
 	default:
 	{
 		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert to column type")));
+				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert json type to column type"), errhint("column type: %u", (uint32) psqlType)));
 		break;
 	}
 	}
@@ -909,8 +911,8 @@ static Datum ColumnValue(FieldValue* fieldValue, FieldType__Kind kind)
  * JsonAnalyzeForeignTable sets the total page count and the function pointer
  * used to acquire a random sample of rows from the foreign file.
  */
-static bool OrcAnalyzeForeignTable(Relation relation,
-		AcquireSampleRowsFunc *acquireSampleRowsFunc, BlockNumber *totalPageCount)
+static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRowsFunc,
+		BlockNumber *totalPageCount)
 {
 	Oid foreignTableId = RelationGetRelid(relation);
 	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
@@ -920,8 +922,7 @@ static bool OrcAnalyzeForeignTable(Relation relation,
 	int statResult = stat(options->filename, &statBuffer);
 	if (statResult < 0)
 	{
-		ereport(ERROR,
-				(errcode_for_file_access(), errmsg("could not stat file \"%s\": %m", options->filename)));
+		ereport(ERROR, (errcode_for_file_access(), errmsg("could not stat file \"%s\": %m", options->filename)));
 	}
 
 	/*
@@ -953,8 +954,8 @@ static bool OrcAnalyzeForeignTable(Relation relation,
  * inaccurate, but that's OK. We currently don't use correlation estimates (the
  * planner only pays attention to correlation for index scans).
  */
-static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
-		int targetRowCount, double *totalRowCount, double *totalDeadRowCount)
+static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows, int targetRowCount,
+		double *totalRowCount, double *totalDeadRowCount)
 {
 	int sampleRowCount = 0;
 	double rowCount = 0.0;
@@ -1015,11 +1016,10 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 	 * Use per-tuple memory context to prevent leak of memory used to read and
 	 * parse rows from the file using ReadLineFromFile and FillTupleSlot.
 	 */
-	tupleContext = AllocSetContextCreate(CurrentMemoryContext,
-			"orc_fdw temporary context",
-			ALLOCSET_DEFAULT_MINSIZE,
-			ALLOCSET_DEFAULT_INITSIZE,
-			ALLOCSET_DEFAULT_MAXSIZE);
+	tupleContext = AllocSetContextCreate(CurrentMemoryContext, "orc_fdw temporary context",
+	ALLOCSET_DEFAULT_MINSIZE,
+	ALLOCSET_DEFAULT_INITSIZE,
+	ALLOCSET_DEFAULT_MAXSIZE);
 
 	/* prepare for sampling rows */
 	selectionState = anl_init_selection_state(targetRowCount);
@@ -1054,8 +1054,7 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 		 */
 		if (sampleRowCount < targetRowCount)
 		{
-			sampleRows[sampleRowCount++] = heap_form_tuple(tupleDescriptor, columnValues,
-					columnNulls);
+			sampleRows[sampleRowCount++] = heap_form_tuple(tupleDescriptor, columnValues, columnNulls);
 		}
 		else
 		{
@@ -1066,8 +1065,7 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 			 */
 			if (rowCountToSkip < 0)
 			{
-				rowCountToSkip = anl_get_next_S(rowCount, targetRowCount,
-						&selectionState);
+				rowCountToSkip = anl_get_next_S(rowCount, targetRowCount, &selectionState);
 			}
 
 			if (rowCountToSkip <= 0)
@@ -1081,8 +1079,7 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 				Assert(rowIndex < targetRowCount);
 
 				heap_freetuple(sampleRows[rowIndex]);
-				sampleRows[rowIndex] = heap_form_tuple(tupleDescriptor, columnValues,
-						columnNulls);
+				sampleRows[rowIndex] = heap_form_tuple(tupleDescriptor, columnValues, columnNulls);
 			}
 
 			rowCountToSkip -= 1;

@@ -247,6 +247,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 	int readerIterator = 0;
 	int streamIterator = 0;
 	PostgresColumnInfo* requestedColumns = query->selectedColumns;
+	PostgresColumnInfo* currentColumnInfo = NULL;
 	int queryColumnIterator = 0;
 	int arrayItemPSQLKind = 0;
 
@@ -270,14 +271,17 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 				&& requestedColumns[queryColumnIterator].columnIndex == readerIterator)
 		{
 			field->required = 1;
-			field->psqlKind = requestedColumns[queryColumnIterator].columnTypeId;
-			arrayItemPSQLKind = requestedColumns[queryColumnIterator].columnArrayTypeId;
+			currentColumnInfo = &requestedColumns[queryColumnIterator];
+			field->psqlKind = currentColumnInfo->columnTypeId;
+			field->columnTypeMod = currentColumnInfo->columnTypeMod;
+			arrayItemPSQLKind = currentColumnInfo->columnArrayTypeId;
 			queryColumnIterator++;
 		}
 		else
 		{
 			field->required = 0;
 			field->psqlKind = 0;
+			field->columnTypeMod = 0;
 			arrayItemPSQLKind = 0;
 		}
 

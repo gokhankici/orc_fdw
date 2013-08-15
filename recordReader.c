@@ -877,12 +877,12 @@ static void StructFieldReaderFree(StructFieldReader* structReader)
  */
 int FieldReaderFree(FieldReader* reader)
 {
+	ListFieldReader* listReader = NULL;
+
 	if (reader == NULL)
 	{
 		return 0;
 	}
-
-	ListFieldReader* listReader = NULL;
 
 	StreamReaderFree(&reader->presentBitReader);
 	elog(WARNING, "cleared present bit reader\n");

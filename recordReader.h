@@ -85,17 +85,22 @@ typedef struct
 
 typedef struct
 {
-	FieldType__Kind kind;
-	int psqlKind;
-	int orcColumnNo;
 	StreamReader presentBitReader;
-	/* Length reader for list & map complex types */
 	StreamReader lengthReader;
+	FieldType__Kind kind;
+
+	int orcColumnNo;
+
+	/* Length reader for list & map complex types */
 	char hasPresentBitReader;
 	char required;
 
 	/* Actual field reader, can be struct, list, or primitive */
 	void* fieldReader;
+
+	/* psql column information */
+	int psqlKind;
+	int columnTypeMod;
 } FieldReader;
 
 /**

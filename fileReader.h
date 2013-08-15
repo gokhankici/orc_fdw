@@ -11,6 +11,7 @@ typedef struct
 {
 	uint32_t columnIndex;
 	uint32_t columnTypeId;
+	uint32_t columnTypeMod;
 	uint32_t columnArrayTypeId;
 } PostgresColumnInfo;
 
