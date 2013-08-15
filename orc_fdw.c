@@ -512,6 +512,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 /* OrcReScanForeignScan rescans the foreign table. */
 static void OrcReScanForeignScan(ForeignScanState *scanState)
 {
+	elog(WARNING,"rescanning\n");
 	/* TODO update here to not to read ps/footer again for efficiency */
 	OrcEndForeignScan(scanState);
 	OrcBeginForeignScan(scanState, 0);
@@ -523,34 +524,44 @@ static void OrcReScanForeignScan(ForeignScanState *scanState)
  */
 static void OrcEndForeignScan(ForeignScanState *scanState)
 {
-//	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
-//	if (executionState == NULL)
-//	{
-//		return;
-//	}
-//
-//	if (executionState->recordReader)
-//	{
-//		FieldReaderFree(executionState->recordReader);
-//		free(executionState->recordReader);
-//	}
-//
-//	if (executionState->stripeFooter)
-//	{
-//		stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
-//	}
-//
-//	if (executionState->footer)
-//	{
-//		footer__free_unpacked(executionState->footer, NULL);
-//	}
-//
-//	if (executionState->postScript)
-//	{
-//		post_script__free_unpacked(executionState->postScript, NULL);
-//	}
-//
-//	pfree(executionState);
+	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
+	int result = 0;
+
+	if (executionState == NULL)
+	{
+		return;
+	}
+
+	if (executionState->recordReader)
+	{
+		result = FieldReaderFree(executionState->recordReader);
+		if (result)
+		{
+			elog(ERROR, "Error while deallocating record reader memory");
+		}
+		free(executionState->recordReader);
+		executionState->recordReader = NULL;
+	}
+
+	if (executionState->stripeFooter)
+	{
+		stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
+		executionState->stripeFooter = NULL;
+	}
+
+	if (executionState->footer)
+	{
+		footer__free_unpacked(executionState->footer, NULL);
+		executionState->footer = NULL;
+	}
+
+	if (executionState->postScript)
+	{
+		post_script__free_unpacked(executionState->postScript, NULL);
+		executionState->postScript = NULL;
+	}
+
+	elog(WARNING,"ending\n");
 }
 
 /*

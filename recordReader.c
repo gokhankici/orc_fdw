@@ -835,6 +835,7 @@ static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 
 		reader->dictionary = NULL;
 		reader->wordLength = NULL;
+		elog(WARNING, "cleared dictionary\n");
 	}
 	for (iterator = 0; iterator < MAX_STREAM_COUNT; ++iterator)
 	{
@@ -842,8 +843,10 @@ static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 		{
 			FileStreamFree(reader->readers[iterator].stream);
 			reader->readers[iterator].stream = NULL;
+			elog(WARNING, "cleared stream %d\n", iterator);
 		}
 	}
+	freeMemory(reader);
 }
 
 /**
@@ -874,10 +877,17 @@ static void StructFieldReaderFree(StructFieldReader* structReader)
  */
 int FieldReaderFree(FieldReader* reader)
 {
+	if (reader == NULL)
+	{
+		return 0;
+	}
+
 	ListFieldReader* listReader = NULL;
 
 	StreamReaderFree(&reader->presentBitReader);
+	elog(WARNING, "cleared present bit reader\n");
 	StreamReaderFree(&reader->lengthReader);
+	elog(WARNING, "cleared length bit reader\n");
 
 	if (reader->fieldReader == NULL)
 	{
@@ -888,10 +898,12 @@ int FieldReaderFree(FieldReader* reader)
 	{
 	case FIELD_TYPE__KIND__STRUCT:
 		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
+		elog(WARNING, "cleared struct reader\n");
 		return 0;
 	case FIELD_TYPE__KIND__LIST:
 		listReader = (ListFieldReader*) reader->fieldReader;
 		FieldReaderFree(&listReader->itemReader);
+		elog(WARNING, "cleared item reader of list\n");
 		return 0;
 	case FIELD_TYPE__KIND__DECIMAL:
 	case FIELD_TYPE__KIND__UNION:
