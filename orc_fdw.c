@@ -485,7 +485,12 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 
 	ExecClearTuple(tupleSlot);
 
-	if (execState->currentLineNumber >= currentStripe->numberofrows)
+	if (currentStripe == NULL)
+	{
+		/* file is empty */
+		return NULL;
+	}
+	else if (execState->currentLineNumber >= currentStripe->numberofrows)
 	{
 		/* End of stripe, read next one */
 		OrcGetNextStripe(execState);
@@ -497,8 +502,10 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 	}
 
+	elog(WARNING, "Reading row %d", execState->currentLineNumber);
 	FillTupleSlot(execState->recordReader, columnValues, columnNulls);
-	elog(WARNING, "tuple read");
+	execState->currentLineNumber++;
+
 	ExecStoreVirtualTuple(tupleSlot);
 
 	return tupleSlot;
@@ -868,7 +875,7 @@ static Datum ColumnValue(FieldValue* fieldValue, FieldType__Kind kind)
 	}
 	case FIELD_TYPE__KIND__STRING:
 	{
-		columnValue = CStringGetDatum(fieldValue->binary);
+		columnValue = DirectFunctionCall1(textin, CStringGetDatum(fieldValue->binary));
 		break;
 	}
 	case FIELD_TYPE__KIND__TIMESTAMP:
