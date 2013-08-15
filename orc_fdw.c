@@ -503,6 +503,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	}
 
 	elog(WARNING, "Reading row %d", execState->currentLineNumber);
+
 	FillTupleSlot(execState->recordReader, columnValues, columnNulls);
 	execState->currentLineNumber++;
 
@@ -771,11 +772,11 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
 				columnNulls[columnNo] = false;
 
 				if (field.list)
-					free(field.list);
+					freeMemory(field.list);
 				if (field.isItemNull)
-					free(field.isItemNull);
+					freeMemory(field.isItemNull);
 				if (field.listItemSizes)
-					free(field.listItemSizes);
+					freeMemory(field.listItemSizes);
 			}
 			else
 			{
@@ -809,11 +810,11 @@ static Datum ColumnValueArray(Field* field, FieldType__Kind itemKind, Oid valueT
 	uint32 itemIndex = 0;
 	FieldValue* itemFieldValue = field->list;
 	char* isItemNull = field->isItemNull;
+	uint32 datumArraySize = 0;
 
 	/* allocate enough room for datum array's maximum possible size */
 	Datum *datumArray = palloc0(listSize * sizeof(Datum));
 	memset(datumArray, 0, listSize * sizeof(Datum));
-	uint32 datumArraySize = 0;
 
 	for (itemIndex = 0; itemIndex < listSize; itemIndex++)
 	{
@@ -822,6 +823,7 @@ static Datum ColumnValueArray(Field* field, FieldType__Kind itemKind, Oid valueT
 			datumArray[itemIndex] = ColumnValue(itemFieldValue, itemKind);
 		}
 		itemFieldValue++;
+		datumArraySize++;
 	}
 
 	get_typlenbyvalalign(valueTypeId, &typeLength, &typeByValue, &typeAlignment);

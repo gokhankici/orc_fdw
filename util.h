@@ -15,6 +15,9 @@
 #define LogError2(x,y) fprintf(stderr, x,y)
 #define LogError3(x,y,z) fprintf(stderr, x,y,z)
 
+#define alloc(x) palloc(x)
+#define freeMemory(x) pfree(x)
+
 #define COMPRESSED_HEADER_SIZE 3
 
 #define min(x,y) (((x) < (y)) ? (x) : (y))

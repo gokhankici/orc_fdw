@@ -30,9 +30,9 @@ int readAllData(FieldReader* fieldReader, int noOfRows)
 			isNull = FieldReaderRead(fieldReader, &field, &length);
 			if (isNull == 0 && fieldReader->kind == TYPE__KIND__LIST)
 			{
-				free(field.list);
-				free(field.isItemNull);
-				free(field.listItemSizes);
+				freeMemory(field.list);
+				freeMemory(field.isItemNull);
+				freeMemory(field.listItemSizes);
 			}
 		}
 	}
@@ -109,9 +109,9 @@ int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 						}
 					}
 					fprintf(file, "]|");
-					free(field.list);
-					free(field.isItemNull);
-					free(field.listItemSizes);
+					freeMemory(field.list);
+					freeMemory(field.isItemNull);
+					freeMemory(field.listItemSizes);
 				}
 				else
 				{
@@ -194,7 +194,7 @@ int main(int argc, char **argv)
 	}
 
 	noOfFields = footer->types[0]->n_subtypes;
-	selectedFields = malloc(noOfFields);
+	selectedFields = alloc(noOfFields);
 
 	for (iterator = 0; iterator < noOfFields; ++iterator)
 	{
@@ -211,7 +211,7 @@ int main(int argc, char **argv)
 		selectedFields[iterator] = 1;
 	}
 
-	fieldReader = malloc(sizeof(FieldReader));
+	fieldReader = alloc(sizeof(FieldReader));
 	result = FieldReaderAllocate(fieldReader, footer, selectedFields);
 
 	if (result)

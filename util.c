@@ -100,7 +100,7 @@ void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int le
 		fprintf(file, "%s", value->binary);
 		break;
 	case FIELD_TYPE__KIND__TIMESTAMP:
-		timespecBuffer = malloc(TIMESPEC_BUFFER_LENGTH);
+		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
 		TimespecToStr(timespecBuffer, &value->time);
 		fprintf(file, "%s", timespecBuffer);
 		break;
@@ -145,7 +145,7 @@ void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int lengt
 		elog(WARNING, "%s\n", value->binary);
 		break;
 	case FIELD_TYPE__KIND__TIMESTAMP:
-		timespecBuffer = malloc(TIMESPEC_BUFFER_LENGTH);
+		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
 		TimespecToStr(timespecBuffer, &value->time);
 		elog(WARNING,  "%s\n", timespecBuffer);
 		break;

@@ -145,10 +145,10 @@ void testStringReader()
 	/* free the resources */
 	for (iterator = 0; iterator < stringReader.dictionarySize; ++iterator)
 	{
-		free(stringReader.dictionary[iterator]);
+		freeMemory(stringReader.dictionary[iterator]);
 	}
-	free(stringReader.dictionary);
-	free(stringReader.wordLength);
+	freeMemory(stringReader.dictionary);
+	freeMemory(stringReader.wordLength);
 }
 
 int main(int argc, char **argv)

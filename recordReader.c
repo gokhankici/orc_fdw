@@ -560,8 +560,8 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 		if (primitiveReader->dictionary == NULL)
 		{
 			/* if dictionary is NULL, read the whole dictionary to the memory */
-			primitiveReader->dictionary = malloc(sizeof(char*) * primitiveReader->dictionarySize);
-			primitiveReader->wordLength = malloc(sizeof(int) * primitiveReader->dictionarySize);
+			primitiveReader->dictionary = alloc(sizeof(char*) * primitiveReader->dictionarySize);
+			primitiveReader->wordLength = alloc(sizeof(int) * primitiveReader->dictionarySize);
 
 			integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
 			binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
@@ -577,7 +577,7 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 				}
 
 				primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
-				primitiveReader->dictionary[dictionaryIterator] = malloc(wordLength + 1);
+				primitiveReader->dictionary[dictionaryIterator] = alloc(wordLength + 1);
 				result = ReadBinary(binaryReader, (uint8_t*) primitiveReader->dictionary[dictionaryIterator],
 						(int) wordLength);
 				primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
@@ -609,7 +609,7 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 		}
 
 		*length = (int) wordLength;
-		value->binary = malloc(wordLength);
+		value->binary = alloc(wordLength);
 		result = ReadBinary(binaryReader, (uint8_t*) value->binary, (int) wordLength);
 		break;
 	case FIELD_TYPE__KIND__TIMESTAMP:
@@ -674,13 +674,13 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 		return -1;
 	}
 
-	field->list = malloc(sizeof(FieldValue) * listSize);
+	field->list = alloc(sizeof(FieldValue) * listSize);
 	*length = (int) listSize;
-	field->isItemNull = malloc(sizeof(char) * listSize);
+	field->isItemNull = alloc(sizeof(char) * listSize);
 
 	if (itemReader->kind == FIELD_TYPE__KIND__BINARY)
 	{
-		field->listItemSizes = malloc(sizeof(int) * listSize);
+		field->listItemSizes = alloc(sizeof(int) * listSize);
 	}
 
 	for (iterator = 0; iterator < listSize; ++iterator)
@@ -815,10 +815,10 @@ static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 	{
 		for (iterator = 0; iterator < reader->dictionarySize; ++iterator)
 		{
-			free(reader->dictionary[iterator]);
+			freeMemory(reader->dictionary[iterator]);
 		}
-		free(reader->dictionary);
-		free(reader->wordLength);
+		freeMemory(reader->dictionary);
+		freeMemory(reader->wordLength);
 
 		reader->dictionary = NULL;
 		reader->wordLength = NULL;
@@ -848,10 +848,10 @@ static void StructFieldReaderFree(StructFieldReader* structReader)
 		{
 			FieldReaderFree(subField);
 		}
-		free(subField);
+		freeMemory(subField);
 	}
-	free(structReader->fields);
-	free(structReader);
+	freeMemory(structReader->fields);
+	freeMemory(structReader);
 }
 
 /**

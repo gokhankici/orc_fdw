@@ -23,17 +23,17 @@
  */
 static FileBuffer* FileBufferInit(char* filePath, long offset, long limit, int bufferSize)
 {
-	FileBuffer* fileStream = malloc(sizeof(FileBuffer));
+	FileBuffer* fileStream = alloc(sizeof(FileBuffer));
 	int result = 0;
 	if (filePath == NULL)
 	{
-		free(fileStream);
+		freeMemory(fileStream);
 		return NULL;
 	}
 	fileStream->file = fopen(filePath, "r");
 	if (fileStream->file == NULL)
 	{
-		free(fileStream);
+		freeMemory(fileStream);
 		return NULL;
 	}
 
@@ -42,17 +42,17 @@ static FileBuffer* FileBufferInit(char* filePath, long offset, long limit, int b
 	if (result)
 	{
 		fclose(fileStream->file);
-		free(fileStream);
+		freeMemory(fileStream);
 		return NULL;
 	}
 
 	fileStream->limit = limit;
 	fileStream->bufferSize = bufferSize;
-	fileStream->buffer = malloc(bufferSize);
+	fileStream->buffer = alloc(bufferSize);
 	if (fileStream->buffer == NULL)
 	{
 		fclose(fileStream->file);
-		free(fileStream);
+		freeMemory(fileStream);
 		return NULL;
 	}
 	fileStream->position = 0;
@@ -83,9 +83,9 @@ static int FileBufferFree(FileBuffer* fileStream)
 	}
 	if (fileStream->buffer)
 	{
-		free(fileStream->buffer);
+		freeMemory(fileStream->buffer);
 	}
-	free(fileStream);
+	freeMemory(fileStream);
 
 	return 0;
 }
@@ -255,7 +255,7 @@ static int FileBufferReadRemaining(FileBuffer* fileStream, char** data, int* dat
 	else
 	{
 		/* else allocate a new block and read into it */
-		newBuffer = malloc(remainingLength);
+		newBuffer = alloc(remainingLength);
 		fileStream->bufferSize = remainingLength;
 
 		/* copy the unread data in the buffer to new buffer */
@@ -267,7 +267,7 @@ static int FileBufferReadRemaining(FileBuffer* fileStream, char** data, int* dat
 		fileStream->position = 0;
 
 		/* free the previous buffer and replace it with the new one */
-		free(fileStream->buffer);
+		freeMemory(fileStream->buffer);
 		fileStream->buffer = newBuffer;
 
 		/* finally fill the new buffer */
@@ -307,7 +307,7 @@ static long FileBufferBytesLeft(FileBuffer* fileStream)
  */
 FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize, CompressionKind kind)
 {
-	FileStream *stream = malloc(sizeof(FileStream));
+	FileStream *stream = alloc(sizeof(FileStream));
 
 	if (kind == COMPRESSION_KIND__NONE)
 	{
@@ -322,7 +322,7 @@ FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSi
 
 	if (stream->fileBuffer == NULL)
 	{
-		free(stream);
+		freeMemory(stream);
 		return NULL;
 	}
 
@@ -354,12 +354,12 @@ int FileStreamFree(FileStream* stream)
 
 	if (!stream->isNotCompressed && stream->uncompressedBuffer != NULL)
 	{
-		free(stream->uncompressedBuffer);
+		freeMemory(stream->uncompressedBuffer);
 	}
 
 	if (stream->tempBuffer)
 	{
-		free(stream->tempBuffer);
+		freeMemory(stream->tempBuffer);
 	}
 
 	if (FileBufferFree(stream->fileBuffer))
@@ -367,7 +367,7 @@ int FileStreamFree(FileStream* stream)
 		return -1;
 	}
 
-	free(stream);
+	freeMemory(stream);
 
 	return 0;
 }
@@ -418,7 +418,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 		if (!stream->isNotCompressed && stream->uncompressedBuffer)
 		{
 			/* free the allocated buffer if compressed is not original before */
-			free(stream->uncompressedBuffer);
+			freeMemory(stream->uncompressedBuffer);
 		}
 
 		stream->isNotCompressed = 1;
@@ -442,7 +442,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 		if (stream->uncompressedBuffer == NULL)
 		{
-			stream->uncompressedBuffer = malloc(bufferSize);
+			stream->uncompressedBuffer = alloc(bufferSize);
 		}
 
 		stream->position = 0;
@@ -551,11 +551,11 @@ char* FileStreamRead(FileStream* stream, int *length)
 	{
 		if (newBuffer)
 		{
-			free(newBuffer);
+			freeMemory(newBuffer);
 		}
 
 		/* stash available data */
-		newBuffer = malloc(requestedLength);
+		newBuffer = alloc(requestedLength);
 		bytesCurrentlyRead = stream->length - stream->position;
 		memcpy(newBuffer, stream->uncompressedBuffer + stream->position, bytesCurrentlyRead);
 
@@ -665,7 +665,7 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 	{
 		/* allocate space for the uncompressed data*/
 		newBufferSize = stream->bufferSize * 2;
-		newBuffer = malloc(newBufferSize);
+		newBuffer = alloc(newBufferSize);
 		newBufferPosition = stream->length - stream->position;
 		memcpy(newBuffer, stream->uncompressedBuffer + stream->position, newBufferPosition);
 
@@ -683,12 +683,12 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 			{
 				/* if there is not space in the new buffer, copy buffer to another one with doubled size */
 				newBufferSize *= 2;
-				tempBuffer = malloc(newBufferSize);
+				tempBuffer = alloc(newBufferSize);
 				memcpy(tempBuffer, newBuffer, newBufferPosition);
 				newBufferPosition += stream->length - stream->position;
 
 				/* free the previous buffer and cleanup */
-				free(newBuffer);
+				freeMemory(newBuffer);
 				newBuffer = tempBuffer;
 				tempBuffer = NULL;
 			}
