@@ -329,19 +329,20 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 	MemoryContext oldContext = CurrentMemoryContext;
 	int result = 0;
 
-	/* switch to orc context for reading data */
-	MemoryContextSwitchTo(execState->orcContext);
-
 	if (execState->nextStripeNumber < footer->n_stripes)
 	{
 		stripeInfo = footer->stripes[execState->nextStripeNumber];
-		execState->nextStripeNumber++;
 
 		stripeFooter = StripeFooterInit(execState->filename, stripeInfo,
 				&execState->compressionParameters);
 
+		/* switch to orc context for reading data */
+		MemoryContextSwitchTo(execState->orcContext);
+
 		result = FieldReaderInit(execState->recordReader, execState->filename, stripeInfo,
 				stripeFooter, &execState->compressionParameters);
+
+		MemoryContextSwitchTo(oldContext);
 
 		if (result)
 		{
@@ -350,14 +351,16 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 
 		if (execState->stripeFooter)
 		{
-			stripe_footer__free_unpacked(execState->stripeFooter,NULL);
+			stripe_footer__free_unpacked(execState->stripeFooter, NULL);
 		}
 
 		execState->stripeFooter = stripeFooter;
 		execState->currentStripeInfo = stripeInfo;
+		execState->currentLineNumber = 0;
 	}
 
-	MemoryContextSwitchTo(oldContext);
+	execState->nextStripeNumber++;
+
 }
 
 static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
@@ -426,8 +429,6 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 		return;
 	}
 
-	elog(WARNING, "BEGINNING");
-
 	foreignTableId = RelationGetRelid(scanState->ss.ss_currentRelation);
 	options = OrcGetOptions(foreignTableId);
 
@@ -462,12 +463,12 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 		elog(ERROR, "Cannot read file footer from the file\n");
 	}
 
-//	execState->orcContext = AllocSetContextCreate(CurrentMemoryContext,
-//			"orc_fdw data context",
-//			ALLOCSET_DEFAULT_MINSIZE,
-//			ALLOCSET_DEFAULT_INITSIZE,
-//			Max(ALLOCSET_DEFAULT_MAXSIZE, postScript->compressionblocksize * 2));
-	execState->orcContext = CurrentMemoryContext;
+	execState->orcContext = AllocSetContextCreate(CurrentMemoryContext,
+			"orc_fdw data context",
+			ALLOCSET_DEFAULT_MINSIZE,
+			ALLOCSET_DEFAULT_INITSIZE,
+			Max(ALLOCSET_DEFAULT_MAXSIZE, postScript->compressionblocksize * 2));
+	// execState->orcContext = CurrentMemoryContext;
 
 	execState->footer = footer;
 	execState->recordReader = palloc(sizeof(FieldReader));
@@ -511,7 +512,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		/* End of stripe, read next one */
 		OrcGetNextStripe(execState);
 
-		if (execState->nextStripeNumber >= execState->footer->n_stripes)
+		if (execState->nextStripeNumber > execState->footer->n_stripes)
 		{
 			/* finish reading if there are no more stipes left */
 			return tupleSlot;
@@ -546,26 +547,28 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 	MemoryContext oldContext = CurrentMemoryContext;
 	int result = 0;
 
-	elog(WARNING, "ENDING");
-
 	if (executionState == NULL)
 	{
 		return;
 	}
 
-	if (executionState->recordReader)
-	{
-		MemoryContextSwitchTo(executionState->orcContext);
-		result = FieldReaderFree(executionState->recordReader);
-		MemoryContextSwitchTo(oldContext);
+	/* clears all file related memory memory */
+	MemoryContextDelete(executionState->orcContext);
 
-		if (result)
-		{
-			elog(ERROR, "Error while deallocating record reader memory");
-		}
-		pfree(executionState->recordReader);
-		executionState->recordReader = NULL;
-	}
+	// if (executionState->recordReader)
+	// {
+	// 	elog(WARNING, "HELLOOOOO");
+	// 	MemoryContextSwitchTo(executionState->orcContext);
+	// 	result = FieldReaderFree(executionState->recordReader);
+	// 	MemoryContextSwitchTo(oldContext);
+
+	// 	if (result)
+	// 	{
+	// 		elog(ERROR, "Error while deallocating record reader memory");
+	// 	}
+	// 	pfree(executionState->recordReader);
+	// 	executionState->recordReader = NULL;
+	// }
 
 	if (executionState->stripeFooter)
 	{
@@ -584,8 +587,6 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 		post_script__free_unpacked(executionState->postScript, NULL);
 		executionState->postScript = NULL;
 	}
-
-	elog(WARNING, "ENDED");
 }
 
 /*
