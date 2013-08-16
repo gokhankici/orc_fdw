@@ -213,6 +213,10 @@ static int IntegerReaderInit(FieldType__Kind kind, StreamReader* intState)
  */
 int StreamReaderFree(StreamReader* streamReader)
 {
+	if (streamReader == NULL)
+	{
+		return 0;
+	}
 
 	if (streamReader->stream != NULL)
 	{
@@ -223,6 +227,7 @@ int StreamReaderFree(StreamReader* streamReader)
 		}
 		streamReader->stream = NULL;
 	}
+
 	return 0;
 }
 
@@ -941,17 +946,20 @@ int FieldReaderFree(FieldReader* reader)
 	{
 	case FIELD_TYPE__KIND__STRUCT:
 		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
-		return 0;
+		break;
 	case FIELD_TYPE__KIND__LIST:
 		listReader = (ListFieldReader*) reader->fieldReader;
 		FieldReaderFree(&listReader->itemReader);
-		return 0;
+		freeMemory(listReader);
+		break;
 	case FIELD_TYPE__KIND__DECIMAL:
 	case FIELD_TYPE__KIND__UNION:
 	case FIELD_TYPE__KIND__MAP:
 		return -1;
 	default:
 		PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->fieldReader);
-		return 0;
+		break;
 	}
+
+	return 0;
 }

@@ -77,7 +77,7 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
  */
 static void OrcGetNextStripe(OrcFdwExecState* execState);
 static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
-		bool *columnNulls);
+		bool *columnNulls, MemoryContext current, MemoryContext orcContext);
 
 static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod);
 static Datum ColumnValueArray(Field* field, Oid valueTypeId, int columnTypeMod,
@@ -326,7 +326,11 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 	Footer* footer = execState->footer;
 	StripeInformation* stripeInfo = NULL;
 	StripeFooter* stripeFooter = NULL;
+	MemoryContext oldContext = CurrentMemoryContext;
 	int result = 0;
+
+	/* switch to orc context for reading data */
+	MemoryContextSwitchTo(execState->orcContext);
 
 	if (execState->nextStripeNumber < footer->n_stripes)
 	{
@@ -346,12 +350,14 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 
 		if (execState->stripeFooter)
 		{
-			pfree(execState->stripeFooter);
+			stripe_footer__free_unpacked(execState->stripeFooter,NULL);
 		}
 
 		execState->stripeFooter = stripeFooter;
 		execState->currentStripeInfo = stripeInfo;
 	}
+
+	MemoryContextSwitchTo(oldContext);
 }
 
 static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
@@ -436,11 +442,6 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	execState->nextStripeNumber = 0;
 	execState->stripeFooter = NULL;
 	execState->currentStripeInfo = NULL;
-	execState->orcContext = AllocSetContextCreate(CurrentMemoryContext,
-			"orc_fdw data context",
-			ALLOCSET_DEFAULT_MINSIZE,
-			ALLOCSET_DEFAULT_INITSIZE,
-			ALLOCSET_DEFAULT_MAXSIZE);
 
 	postScript = PostScriptInit(options->filename, &postScriptOffset,
 			&execState->compressionParameters);
@@ -461,8 +462,14 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 		elog(ERROR, "Cannot read file footer from the file\n");
 	}
 
-	execState->footer = footer;
+//	execState->orcContext = AllocSetContextCreate(CurrentMemoryContext,
+//			"orc_fdw data context",
+//			ALLOCSET_DEFAULT_MINSIZE,
+//			ALLOCSET_DEFAULT_INITSIZE,
+//			Max(ALLOCSET_DEFAULT_MAXSIZE, postScript->compressionblocksize * 2));
+	execState->orcContext = CurrentMemoryContext;
 
+	execState->footer = footer;
 	execState->recordReader = palloc(sizeof(FieldReader));
 
 	OrcInitializeFieldReader(execState, columnList);
@@ -481,6 +488,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	OrcFdwExecState *execState = (OrcFdwExecState *) scanState->fdw_state;
 	TupleTableSlot *tupleSlot = scanState->ss.ss_ScanTupleSlot;
 	StripeInformation* currentStripe = execState->currentStripeInfo;
+	MemoryContext oldContext = CurrentMemoryContext;
 
 	TupleDesc tupleDescriptor = tupleSlot->tts_tupleDescriptor;
 	Datum *columnValues = tupleSlot->tts_values;
@@ -510,7 +518,9 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 	}
 
-	FillTupleSlot(execState->recordReader, columnValues, columnNulls);
+	FillTupleSlot(execState->recordReader, columnValues, columnNulls, oldContext,
+			execState->orcContext);
+
 	execState->currentLineNumber++;
 
 	ExecStoreVirtualTuple(tupleSlot);
@@ -522,46 +532,8 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 static void OrcReScanForeignScan(ForeignScanState *scanState)
 {
 //	/* TODO update here to not to read ps/footer again for efficiency */
-//	OrcEndForeignScan(scanState);
-//	OrcBeginForeignScan(scanState, 0);
-
-	OrcFdwExecState *execState = (OrcFdwExecState *) scanState->fdw_state;
-	ForeignScan *foreignScan = NULL;
-	List *foreignPrivateList = NULL;
-	List *columnList = NULL;
-	int result = 0;
-
-	elog(WARNING, "RE-SCANNING");
-
-	foreignScan = (ForeignScan *) scanState->ss.ps.plan;
-	foreignPrivateList = (List *) foreignScan->fdw_private;
-
-	columnList = (List *) linitial(foreignPrivateList);
-
-	execState->currentLineNumber = 0;
-	execState->nextStripeNumber = 0;
-	execState->currentStripeInfo = NULL;
-
-	if (execState->recordReader)
-	{
-		result = FieldReaderFree(execState->recordReader);
-		if (result)
-		{
-			elog(ERROR, "Error while deallocating record reader memory");
-		}
-		pfree(execState->recordReader);
-		execState->recordReader = NULL;
-	}
-
-	if (execState->stripeFooter)
-	{
-		stripe_footer__free_unpacked(execState->stripeFooter, NULL);
-		execState->stripeFooter = NULL;
-	}
-
-	execState->recordReader = palloc(sizeof(FieldReader));
-
-	OrcInitializeFieldReader(execState, columnList);
+	OrcEndForeignScan(scanState);
+	OrcBeginForeignScan(scanState, 0);
 }
 
 /*
@@ -571,6 +543,7 @@ static void OrcReScanForeignScan(ForeignScanState *scanState)
 static void OrcEndForeignScan(ForeignScanState *scanState)
 {
 	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
+	MemoryContext oldContext = CurrentMemoryContext;
 	int result = 0;
 
 	elog(WARNING, "ENDING");
@@ -582,7 +555,10 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 
 	if (executionState->recordReader)
 	{
+		MemoryContextSwitchTo(executionState->orcContext);
 		result = FieldReaderFree(executionState->recordReader);
+		MemoryContextSwitchTo(oldContext);
+
 		if (result)
 		{
 			elog(ERROR, "Error while deallocating record reader memory");
@@ -790,7 +766,7 @@ ColumnList(RelOptInfo *baserel)
 }
 
 static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
-		bool *columnNulls)
+		bool *columnNulls, MemoryContext current, MemoryContext orcContext)
 {
 	FieldReader* fieldReader = NULL;
 	StructFieldReader* structFieldReader = NULL;
@@ -810,7 +786,9 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues,
 			continue;
 		}
 
+		MemoryContextSwitchTo(orcContext);
 		isNull = FieldReaderRead(fieldReader, &field, &length);
+		MemoryContextSwitchTo(current);
 
 		if (isNull == 0)
 		{

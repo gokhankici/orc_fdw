@@ -361,7 +361,7 @@ int FileStreamFree(FileStream* stream)
 {
 	if (stream == NULL)
 	{
-		return -1;
+		return 0;
 	}
 
 	freeMemory(stream->allocatedMemory);

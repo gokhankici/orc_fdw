@@ -464,7 +464,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName,
 
 		if (IsComplexType(listFieldReader->itemReader.kind))
 		{
-			fprintf(stderr, "List of complex types complex types are not supported\n");
+			LogError("List of complex types complex types are not supported\n");
 			return -1;
 		}
 
