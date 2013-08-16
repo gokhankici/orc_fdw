@@ -311,7 +311,7 @@ static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *exp
 		int statResult = stat(options->filename, &statBuffer);
 		if (statResult == 0)
 		{
-			ExplainPropertyLong("Json File Size", (long) statBuffer.st_size,
+			ExplainPropertyLong("Orc File Size", (long) statBuffer.st_size,
 					explainState);
 		}
 	}
@@ -899,11 +899,6 @@ static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod
 		break;
 	}
 	case FLOAT4OID:
-	{
-		doubleValue = fieldValue->floatValue;
-		columnValue = Float8GetDatum(doubleValue);
-		break;
-	}
 	case FLOAT8OID:
 	{
 		columnValue = Float8GetDatum(fieldValue->doubleValue);

@@ -608,7 +608,7 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 	case FIELD_TYPE__KIND__FLOAT:
 		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadFloat(fpStreamReader, &floatData);
-		value->floatValue = floatData;
+		value->doubleValue = floatData;
 		break;
 	case FIELD_TYPE__KIND__DOUBLE:
 		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
