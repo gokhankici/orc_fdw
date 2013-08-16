@@ -311,8 +311,7 @@ static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *exp
 		int statResult = stat(options->filename, &statBuffer);
 		if (statResult == 0)
 		{
-			ExplainPropertyLong("Orc File Size", (long) statBuffer.st_size,
-					explainState);
+			ExplainPropertyLong("Orc File Size", (long) statBuffer.st_size, explainState);
 		}
 	}
 }
@@ -544,8 +543,6 @@ static void OrcReScanForeignScan(ForeignScanState *scanState)
 static void OrcEndForeignScan(ForeignScanState *scanState)
 {
 	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
-	MemoryContext oldContext = CurrentMemoryContext;
-	int result = 0;
 
 	if (executionState == NULL)
 	{
@@ -554,21 +551,6 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 
 	/* clears all file related memory memory */
 	MemoryContextDelete(executionState->orcContext);
-
-	// if (executionState->recordReader)
-	// {
-	// 	elog(WARNING, "HELLOOOOO");
-	// 	MemoryContextSwitchTo(executionState->orcContext);
-	// 	result = FieldReaderFree(executionState->recordReader);
-	// 	MemoryContextSwitchTo(oldContext);
-
-	// 	if (result)
-	// 	{
-	// 		elog(ERROR, "Error while deallocating record reader memory");
-	// 	}
-	// 	pfree(executionState->recordReader);
-	// 	executionState->recordReader = NULL;
-	// }
 
 	if (executionState->stripeFooter)
 	{
@@ -879,7 +861,6 @@ static Datum ColumnValueArray(Field* field, Oid valueTypeId, int columnTypeMod,
 static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod)
 {
 	Datum columnValue = 0;
-	double doubleValue = 0;
 
 	switch (psqlType)
 	{
@@ -935,8 +916,20 @@ static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod
 		break;
 	}
 	case DATEOID:
+	{
+		columnValue = DateADTGetDatum(fieldValue->time.tv_sec);
+		break;
+	}
 	case TIMESTAMPOID:
+	{
+		columnValue = TimestampGetDatum(fieldValue->time.tv_sec);
+		break;
+	}
 	case TIMESTAMPTZOID:
+	{
+		columnValue = TimestampTzGetDatum(fieldValue->time.tv_sec);
+		break;
+	}
 	default:
 	{
 		ereport(ERROR,
