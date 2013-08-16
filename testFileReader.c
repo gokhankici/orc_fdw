@@ -28,7 +28,7 @@ int readAllData(FieldReader* fieldReader, int noOfRows)
 			}
 
 			isNull = FieldReaderRead(fieldReader, &field, &length);
-			if (isNull == 0 && fieldReader->kind == TYPE__KIND__LIST)
+			if (isNull == 0 && fieldReader->kind == FIELD_TYPE__KIND__LIST)
 			{
 				freeMemory(field.list);
 				freeMemory(field.isItemNull);
@@ -49,7 +49,7 @@ int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 	int listLength = 0;
 	int isNull = 0;
 	int iterator = 0;
-	Type__Kind listItemKind = 0;
+	FieldType__Kind listItemKind = 0;
 	if (file == NULL)
 	{
 		fprintf(stderr, "Cannot open file to read.");
@@ -76,7 +76,7 @@ int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 			}
 			else if (isNull == 0)
 			{
-				if (fieldReader->kind == TYPE__KIND__LIST)
+				if (fieldReader->kind == FIELD_TYPE__KIND__LIST)
 				{
 					listLength = length;
 					listItemKind = ((ListFieldReader*) fieldReader->fieldReader)->itemReader.kind;
@@ -168,7 +168,7 @@ int main(int argc, char **argv)
 	else
 	{
 		outputFileName = argv[2];
-		outputFile = fopen(outputFileName, "w");
+		outputFile = MyOpenFile(outputFileName, "w");
 	}
 
 	if (outputFile == NULL)
@@ -254,7 +254,7 @@ int main(int argc, char **argv)
 	FieldReaderFree(fieldReader);
 
 	if (outputFile != stdout)
-		fclose(outputFile);
+		MyCloseFile(outputFile);
 
 	printf("Total bytes read from the file: %ld\n", totalBytesRead);
 	printf("Uncompressed size of the read data: %ld\n", totalUncompressedBytes);

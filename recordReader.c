@@ -491,6 +491,53 @@ static int ReadBinary(StreamReader* binaryReaderState, uint8_t* data, int length
 	return 0;
 }
 
+int ReadDictionary(FieldReader* fieldReader)
+{
+	PrimitiveFieldReader *primitiveReader =
+			(PrimitiveFieldReader *) fieldReader->fieldReader;
+	StreamReader *integerStreamReader = NULL;
+	StreamReader *binaryReader = NULL;
+	int dictionaryIterator = 0;
+	int result = 0;
+	uint64_t wordLength = 0;
+
+	if (primitiveReader->dictionary == NULL)
+	{
+		/* if dictionary is NULL, read the whole dictionary to the memory */
+		primitiveReader->dictionary =
+		alloc(sizeof(char*) * primitiveReader->dictionarySize);
+		primitiveReader->wordLength =
+		alloc(sizeof(int) * primitiveReader->dictionarySize);
+
+		integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
+		binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
+
+		/* read the dictionary */
+		for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
+				++dictionaryIterator)
+		{
+			result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
+			if (result < 0)
+			{
+				return -1;
+			}
+
+			primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
+			primitiveReader->dictionary[dictionaryIterator] = alloc(wordLength + 1);
+			result = ReadBinary(binaryReader,
+					(uint8_t*) primitiveReader->dictionary[dictionaryIterator],
+					(int) wordLength);
+			primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
+
+			if (result < 0)
+			{
+				return -1;
+			}
+		}
+	}
+	return 0;
+}
+
 /**
  * Reads a primitive type from the reader
  *
@@ -835,7 +882,6 @@ static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 
 		reader->dictionary = NULL;
 		reader->wordLength = NULL;
-		elog(WARNING, "cleared dictionary\n");
 	}
 	for (iterator = 0; iterator < MAX_STREAM_COUNT; ++iterator)
 	{
@@ -843,7 +889,6 @@ static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
 		{
 			FileStreamFree(reader->readers[iterator].stream);
 			reader->readers[iterator].stream = NULL;
-			elog(WARNING, "cleared stream %d\n", iterator);
 		}
 	}
 	freeMemory(reader);
@@ -885,9 +930,7 @@ int FieldReaderFree(FieldReader* reader)
 	}
 
 	StreamReaderFree(&reader->presentBitReader);
-	elog(WARNING, "cleared present bit reader\n");
 	StreamReaderFree(&reader->lengthReader);
-	elog(WARNING, "cleared length bit reader\n");
 
 	if (reader->fieldReader == NULL)
 	{
@@ -898,12 +941,10 @@ int FieldReaderFree(FieldReader* reader)
 	{
 	case FIELD_TYPE__KIND__STRUCT:
 		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
-		elog(WARNING, "cleared struct reader\n");
 		return 0;
 	case FIELD_TYPE__KIND__LIST:
 		listReader = (ListFieldReader*) reader->fieldReader;
 		FieldReaderFree(&listReader->itemReader);
-		elog(WARNING, "cleared item reader of list\n");
 		return 0;
 	case FIELD_TYPE__KIND__DECIMAL:
 	case FIELD_TYPE__KIND__UNION:

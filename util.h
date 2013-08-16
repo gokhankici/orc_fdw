@@ -8,6 +8,9 @@
 #ifndef UTIL_H_
 #define UTIL_H_
 
+#include "postgres.h"
+#include "storage/fd.h"
+
 #include "orc.pb-c.h"
 #include "recordReader.h"
 
@@ -15,8 +18,12 @@
 #define LogError2(x,y) fprintf(stderr, x,y)
 #define LogError3(x,y,z) fprintf(stderr, x,y,z)
 
-#define alloc(x) malloc(x)
-#define freeMemory(x) free(x)
+#define alloc(memoryPointer) palloc(memoryPointer)
+#define freeMemory(memoryPointer) pfree(memoryPointer)
+#define reAllocateMemory(memoryPointer,newSize) repalloc(memoryPointer,newSize)
+
+#define MyOpenFile(filePath, mode) AllocateFile(filePath, mode)
+#define MyCloseFile(filePath) FreeFile(filePath)
 
 #define COMPRESSED_HEADER_SIZE 3
 

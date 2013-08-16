@@ -77,6 +77,7 @@ typedef struct OrcFdwExecState
 	StripeFooter *stripeFooter;
 	CompressionParameters compressionParameters;
 	FieldReader* recordReader;
+	MemoryContext orcContext;
 
 	uint32 nextStripeNumber;
 	StripeInformation *currentStripeInfo;

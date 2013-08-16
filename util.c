@@ -4,7 +4,7 @@
 #include <string.h>
 #include <zlib.h>
 #include "util.h"
-#include "snappy-c/snappy.h"
+#include "snappy.h"
 
 #define TIMESPEC_BUFFER_LENGTH 30
 

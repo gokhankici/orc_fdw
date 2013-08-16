@@ -12,6 +12,7 @@
 #include "orc.pb-c.h"
 
 #define DEFAULT_BUFFER_SIZE 262144
+#define DEFAULT_TEMP_BUFFER_SIZE 30
 
 typedef struct
 {
@@ -54,7 +55,7 @@ typedef struct
 	/* current length of the uncompressed buffer */
 	int length;
 	/* buffer to store uncompressed data */
-	char* uncompressedBuffer;
+	char* data;
 	/**
 	 * When stream is very small, it is not compressed. This byte is for providing that information.
 	 * 1 if uncompressed stream is the same as compressed one,
@@ -64,12 +65,20 @@ typedef struct
 
 	/* this is for reading bytes from cross boundries */
 	char* tempBuffer;
+	int tempBufferSize;
+
+	/*
+	 * Memory is allocated only once for this structure.
+	 * This is used for storing the data pointer when isNotCompressed == 1.
+	 */
+	char* allocatedMemory;
 } FileStream;
 
 FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize,
 		CompressionKind kind);
 int FileStreamFree(FileStream*);
 char* FileStreamRead(FileStream*, int *length);
+int FileStreamEOF(FileStream* fileStream);
 int FileStreamReadRemaining(FileStream*, char** data, int* dataLength);
 int FileStreamReadByte(FileStream* stream, char* value);
 

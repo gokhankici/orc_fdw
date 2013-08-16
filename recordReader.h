@@ -142,6 +142,8 @@ int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, cha
  */
 int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
 
+int ReadDictionary(FieldReader* fieldReader);
+
 /**
  * Helper functions to get the kth stream and its type
  */
