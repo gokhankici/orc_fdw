@@ -6,11 +6,6 @@
 #include "util.h"
 #include "recordReader.h"
 
-/* base timestamp for ORC file */
-struct tm ORC_BASE_TIMESTAMP =
-{ .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 5, .tm_mon = 0,
-		.tm_year = 115 };
-
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
 static void StructFieldReaderFree(StructFieldReader* reader);
 
@@ -677,7 +672,6 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 		result = ReadBinary(binaryReader, (uint8_t*) value->binary, (int) wordLength);
 		break;
 	case FIELD_TYPE__KIND__TIMESTAMP:
-
 		/* seconds primitiveReader */
 		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadInteger(FIELD_TYPE__KIND__LONG, integerStreamReader, &data64);
@@ -688,9 +682,7 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 		result |= ReadInteger(FIELD_TYPE__KIND__INT, nanoSecondsReader, &data64);
 		newNanos = ParseNanos((long) data64);
 
-		millis = mktime(&ORC_BASE_TIMESTAMP);
-		millis += seconds;
-		millis *= 1000;
+		millis = (ORC_EPOCH_IN_SECONDS + seconds) * 1000;
 
 		if (millis >= 0)
 		{
@@ -703,6 +695,10 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 
 		value->time.tv_sec = millis / 1000;
 		value->time.tv_nsec = newNanos;
+		break;
+	case FIELD_TYPE__KIND__DECIMAL:
+	case FIELD_TYPE__KIND__UNION:
+		result = -1;
 		break;
 	default:
 		result = -1;

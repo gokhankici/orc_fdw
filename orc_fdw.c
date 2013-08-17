@@ -81,10 +81,6 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *
 static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod);
 static Datum ColumnValueArray(Field* field, Oid valueTypeId, int columnTypeMod, int listSize);
 
-/* base timestamp of PostgreSQL */
-struct tm PSQL_BASE_TIMESTAMP =
-{ .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 5, .tm_mon = 0, .tm_year = 100 };
-
 /* Declarations for dynamic loading */
 PG_MODULE_MAGIC
 ;
@@ -906,14 +902,18 @@ static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod
 	}
 	case DATEOID:
 	{
-		columnValue = DateADTGetDatum(fieldValue->time.tv_sec);
+		deltaTime = fieldValue->time.tv_sec - POSTGRESQL_EPOCH_IN_SECONDS;
+		columnValue = DateADTGetDatum(deltaTime / SECONDS_PER_DAY);
 		break;
 	}
 	case TIMESTAMPOID:
 	{
-		deltaTime = fieldValue->time.tv_sec - mktime(&PSQL_BASE_TIMESTAMP);
-		/* in microseconds */
-		columnValue = TimestampGetDatum(deltaTime * 1000000);
+		/* timestamp is in microseconds */
+		deltaTime = fieldValue->time.tv_sec * MICROSECONDS_PER_SECOND;
+		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECONDS;
+		elog(WARNING, "%ld", deltaTime);
+		deltaTime -= POSTGRESQL_EPOCH_IN_SECONDS * MICROSECONDS_PER_SECOND;
+		columnValue = TimestampGetDatum(deltaTime);
 		break;
 	}
 	case TIMESTAMPTZOID:

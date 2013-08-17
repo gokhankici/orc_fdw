@@ -24,8 +24,15 @@
 #define BINARY_STREAM_COUNT		2
 #define COMMON_STREAM_COUNT		1
 
-#define MAX_POSTSCRIPT_SIZE 255
-#define STREAM_BUFFER_SIZE 1024
+#define MAX_POSTSCRIPT_SIZE		255
+#define STREAM_BUFFER_SIZE		1024
+
+/* timestamp related values */
+#define SECONDS_PER_DAY					86400
+#define MICROSECONDS_PER_SECOND			1000000L
+#define NANOSECONDS_PER_MICROSECONDS	1000
+#define POSTGRESQL_EPOCH_IN_SECONDS		946677600L
+#define ORC_EPOCH_IN_SECONDS			1420063200L
 
 #define ToUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
 #define ToSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
@@ -127,8 +134,6 @@ typedef struct
 	int noOfFields;
 	FieldReader** fields;
 } StructFieldReader;
-
-extern struct tm ORC_BASE_TIMESTAMP;
 
 int FieldReaderFree(FieldReader* reader);
 

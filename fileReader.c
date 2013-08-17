@@ -474,7 +474,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, char* orcFileName,
 	case FIELD_TYPE__KIND__DECIMAL:
 	case FIELD_TYPE__KIND__UNION:
 		/* these are not supported yet */
-		fprintf(stderr, "Use of not supported type. Type id: %d\n", fieldKind);
+		LogError2("Use of not supported type. Type id: %d\n", fieldKind);
 		return -1;
 	case FIELD_TYPE__KIND__STRUCT:
 		structFieldReader = fieldReader->fieldReader;
