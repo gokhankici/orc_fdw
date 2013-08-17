@@ -6,8 +6,9 @@
 #include "util.h"
 #include "recordReader.h"
 
-struct tm BASE_TIMESTAMP =
-{ .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 3, .tm_mon = 0,
+/* base timestamp for ORC file */
+struct tm ORC_BASE_TIMESTAMP =
+{ .tm_sec = 0, .tm_min = 0, .tm_hour = 0, .tm_mday = 1, .tm_wday = 5, .tm_mon = 0,
 		.tm_year = 115 };
 
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
@@ -565,11 +566,10 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 	StreamReader* binaryReader = NULL;
 	StreamReader *nanoSecondsReader = NULL;
 
-	time_t millis;
+	time_t millis = 0;
 	uint64_t wordLength = 0;
 	uint64_t index = 0;
-	uint64_t seconds = 0;
-	uint64_t nanoSeconds = 0;
+	int64_t seconds = 0;
 	uint64_t data64 = 0;
 	float floatData = 0;
 	double doubleData = 0;
@@ -680,14 +680,17 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 
 		/* seconds primitiveReader */
 		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
-		result = ReadInteger(FIELD_TYPE__KIND__LONG, integerStreamReader, &seconds);
-		seconds = ToSignedInteger(seconds);
+		result = ReadInteger(FIELD_TYPE__KIND__LONG, integerStreamReader, &data64);
+		seconds = ToSignedInteger(data64);
 
 		/* nano seconds primitiveReader */
 		nanoSecondsReader = &primitiveReader->readers[SECONDARY_STREAM];
-		result |= ReadInteger(FIELD_TYPE__KIND__INT, nanoSecondsReader, &nanoSeconds);
-		newNanos = ParseNanos((long) nanoSeconds);
-		millis = (mktime(&BASE_TIMESTAMP) + seconds) * 1000;
+		result |= ReadInteger(FIELD_TYPE__KIND__INT, nanoSecondsReader, &data64);
+		newNanos = ParseNanos((long) data64);
+
+		millis = mktime(&ORC_BASE_TIMESTAMP);
+		millis += seconds;
+		millis *= 1000;
 
 		if (millis >= 0)
 		{

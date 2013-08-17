@@ -128,7 +128,7 @@ typedef struct
 	FieldReader** fields;
 } StructFieldReader;
 
-extern struct tm BASE_TIMESTAMP;
+extern struct tm ORC_BASE_TIMESTAMP;
 
 int FieldReaderFree(FieldReader* reader);
 
