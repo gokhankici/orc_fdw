@@ -877,11 +877,6 @@ static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod
 		columnValue = Float8GetDatum(fieldValue->doubleValue);
 		break;
 	}
-	case NUMERICOID:
-	{
-		ereport(ERROR, (errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("Numeric type is not supported")));
-		break;
-	}
 	case BOOLOID:
 	{
 		columnValue = BoolGetDatum(fieldValue->value8);
@@ -917,23 +912,17 @@ static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod
 		/* timestamp is in microseconds */
 		deltaTime = fieldValue->time.tv_sec * MICROSECONDS_PER_SECOND;
 		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECONDS;
+		elog(WARNING, "%ld", deltaTime / MICROSECONDS_PER_SECOND);
 		deltaTime -= POSTGRESQL_EPOCH_IN_SECONDS * MICROSECONDS_PER_SECOND;
 		columnValue = TimestampGetDatum(deltaTime);
 		break;
 	}
+	case NUMERICOID:
 	case TIMESTAMPTZOID:
-	{
-		/* timestamp is in microseconds */
-		deltaTime = fieldValue->time.tv_sec * MICROSECONDS_PER_SECOND;
-		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECONDS;
-		deltaTime -= POSTGRESQL_EPOCH_IN_SECONDS * MICROSECONDS_PER_SECOND;
-		columnValue = TimestampTzGetDatum(fieldValue->time.tv_sec);
-		break;
-	}
 	default:
 	{
 		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert json type to column type"), errhint("column type: %u", (uint32) psqlType)));
+				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert ORC type to column type"), errhint("column type: %u", (uint32) psqlType)));
 		break;
 	}
 	}
