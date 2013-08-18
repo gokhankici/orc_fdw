@@ -911,7 +911,7 @@ static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod
 	{
 		/* timestamp is in microseconds */
 		deltaTime = fieldValue->time.tv_sec * MICROSECONDS_PER_SECOND;
-		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECONDS;
+		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECOND;
 		deltaTime -= POSTGRESQL_EPOCH_IN_SECONDS * MICROSECONDS_PER_SECOND;
 		columnValue = TimestampGetDatum(deltaTime);
 		break;

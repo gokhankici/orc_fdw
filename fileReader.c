@@ -1,34 +1,5 @@
 #include "postgres.h"
-#include <stdio.h>
-#include <sys/stat.h>
-#include "access/reloptions.h"
-#include "catalog/pg_foreign_table.h"
 #include "catalog/pg_type.h"
-#include "commands/defrem.h"
-#include "commands/explain.h"
-#include "commands/vacuum.h"
-#include "foreign/fdwapi.h"
-#include "foreign/foreign.h"
-#include "miscadmin.h"
-#include "nodes/makefuncs.h"
-#include "optimizer/cost.h"
-#include "optimizer/plancat.h"
-#include "optimizer/pathnode.h"
-#include "optimizer/planmain.h"
-#include "optimizer/restrictinfo.h"
-#include "optimizer/var.h"
-#include "port.h"
-#include "storage/fd.h"
-#include "utils/array.h"
-#include "utils/builtins.h"
-#include "utils/date.h"
-#include "utils/datetime.h"
-#include "utils/int8.h"
-#include "utils/timestamp.h"
-#include "utils/hsearch.h"
-#include "utils/lsyscache.h"
-#include "utils/memutils.h"
-#include "utils/rel.h"
 
 #include "orc.pb-c.h"
 #include "fileReader.h"
@@ -39,6 +10,9 @@
 
 static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 		PostgresQueryInfo* query);
+static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* currentDataOffset,
+		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters);
+static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType);
 
 /**
  * Reads the postscript from the orc file and returns the postscript. Stores its offset to parameter.
@@ -195,6 +169,13 @@ StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo,
 	return stripeFooter;
 }
 
+/*
+ * Allocates memory and sets initial types/values for the variables of a field reader
+ *
+ * @param query list of required columns and their propertiesss
+ *
+ * @return
+ */
 int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* query)
 {
 	reader->orcColumnNo = 0;
@@ -206,6 +187,47 @@ int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* 
 
 	reader->fieldReader = alloc(sizeof(StructFieldReader));
 	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, query);
+}
+
+/*
+ * Utility function to check whether ORC type matches with PostgreSQL type
+ */
+static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType)
+{
+	bool matches = false;
+
+	switch (psqlType)
+	{
+	case INT8OID:
+		matches = matches || (orcType == FIELD_TYPE__KIND__LONG);
+	case INT4OID:
+		matches = matches || (orcType == FIELD_TYPE__KIND__INT);
+	case INT2OID:
+		matches = matches || (orcType == FIELD_TYPE__KIND__SHORT);
+		break;
+	case FLOAT4OID:
+	case FLOAT8OID:
+		matches = orcType == FIELD_TYPE__KIND__FLOAT || orcType == FIELD_TYPE__KIND__DOUBLE;
+		break;
+	case BOOLOID:
+		matches = orcType == FIELD_TYPE__KIND__BOOLEAN;
+		break;
+	case BPCHAROID:
+	case VARCHAROID:
+	case TEXTOID:
+		matches = orcType == FIELD_TYPE__KIND__STRING;
+		break;
+	case DATEOID:
+	case TIMESTAMPOID:
+		matches = orcType = FIELD_TYPE__KIND__TIMESTAMP;
+		break;
+	case NUMERICOID:
+	case TIMESTAMPTZOID:
+	default:
+		break;
+	}
+
+	return matches;
 }
 
 /**
@@ -233,6 +255,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 	PostgresColumnInfo* currentColumnInfo = NULL;
 	int queryColumnIterator = 0;
 	int arrayItemPSQLKind = 0;
+	bool typesMatch = false;
 
 	reader->noOfFields = root->n_subtypes;
 	reader->fields = alloc(sizeof(FieldReader*) * reader->noOfFields);
@@ -255,6 +278,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 			field->required = 1;
 			currentColumnInfo = &requestedColumns[queryColumnIterator];
 			field->psqlKind = currentColumnInfo->columnTypeId;
+
 			field->columnTypeMod = currentColumnInfo->columnTypeMod;
 			arrayItemPSQLKind = currentColumnInfo->columnArrayTypeId;
 			queryColumnIterator++;
@@ -283,6 +307,12 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 			listItemReader->orcColumnNo = type->subtypes[0];
 			listItemReader->kind = types[listItemReader->orcColumnNo]->kind;
 
+			typesMatch = MatchOrcWithPSQL(listItemReader->kind, listItemReader->psqlKind);
+			if (arrayItemPSQLKind == InvalidOid || !typesMatch)
+			{
+				LogError("ORC and PSQL types do not match");
+			}
+
 			if (IsComplexType(listItemReader->kind))
 			{
 				/* only list of primitive types is supported */
@@ -308,6 +338,12 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 		}
 		else
 		{
+			typesMatch = MatchOrcWithPSQL(field->kind, field->psqlKind);
+			if (arrayItemPSQLKind != InvalidOid || !typesMatch)
+			{
+				LogError("ORC and PSQL types do not match");
+			}
+
 			field->fieldReader = alloc(sizeof(PrimitiveFieldReader));
 
 			primitiveReader = field->fieldReader;
@@ -325,9 +361,10 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 	return 0;
 }
 
-static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* currentDataOffset,
-		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters);
-
+/*
+ * Initializes a reader for the given stripe. Uses helper function FieldReaderInitHelper
+ * to recursively initialize its fields.
+ */
 int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe,
 		StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
@@ -349,7 +386,7 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 }
 
 /**
- * Initialize the structure reader for the given stripe
+ * Helper function to initialize the reader for the given stripe
  *
  * @param fieldReader field reader for the table
  * @param file ORC file
@@ -385,6 +422,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 	fieldReader->hasPresentBitReader = stream->column == fieldReader->orcColumnNo
 			&& stream->kind == STREAM__KIND__PRESENT;
 
+	/* first stream is always present stream, check for that */
 	if (fieldReader->hasPresentBitReader)
 	{
 		if (fieldReader->required)
@@ -416,6 +454,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 	switch (fieldKind)
 	{
 	case FIELD_TYPE__KIND__LIST:
+	{
 		listFieldReader = fieldReader->fieldReader;
 
 		if (fieldReader->required)
@@ -447,13 +486,18 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 
 		return FieldReaderInitHelper(&listFieldReader->itemReader, file, currentDataOffset,
 				streamNo, stripeFooter, parameters);
+	}
 	case FIELD_TYPE__KIND__MAP:
 	case FIELD_TYPE__KIND__DECIMAL:
 	case FIELD_TYPE__KIND__UNION:
+	{
 		/* these are not supported yet */
 		LogError2("Use of not supported type. Type id: %d\n", fieldKind);
 		return -1;
+	}
 	case FIELD_TYPE__KIND__STRUCT:
+	{
+		/* check for nested types is done at FieldReaderAllocate function */
 		structFieldReader = fieldReader->fieldReader;
 		for (fieldNo = 0; fieldNo < structFieldReader->noOfFields; fieldNo++)
 		{
@@ -468,12 +512,15 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 		}
 
 		return (*streamNo == totalNoOfStreams) ? 0 : -1;
+	}
 	default:
+	{
 		/* these are the supported types, unsupported types are declared above */
 		primitiveFieldReader = fieldReader->fieldReader;
 
 		if (fieldReader->kind == FIELD_TYPE__KIND__STRING && primitiveFieldReader)
 		{
+			/* if field's type is string, (re)initialize dictionary */
 			if (primitiveFieldReader->dictionary)
 			{
 				for (dictionaryIterator = 0;
@@ -502,6 +549,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 
 		noOfDataStreams = GetStreamCount(fieldReader->kind);
 
+		/* check if there exists enough stream for the current field */
 		if (*streamNo + noOfDataStreams > totalNoOfStreams)
 		{
 			return -1;
@@ -529,6 +577,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 		}
 
 		return 0;
+	}
 	}
 }
 

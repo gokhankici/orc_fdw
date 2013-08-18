@@ -1,3 +1,4 @@
+drop foreign table if exists bigrow;
 create foreign table bigrow(
     boolean1 BOOLEAN,
     short1 INT2,

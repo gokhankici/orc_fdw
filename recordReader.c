@@ -1,3 +1,32 @@
+#include "postgres.h"
+#include "access/reloptions.h"
+#include "catalog/pg_foreign_table.h"
+#include "catalog/pg_type.h"
+#include "commands/defrem.h"
+#include "commands/explain.h"
+#include "commands/vacuum.h"
+#include "foreign/fdwapi.h"
+#include "foreign/foreign.h"
+#include "miscadmin.h"
+#include "nodes/makefuncs.h"
+#include "optimizer/cost.h"
+#include "optimizer/plancat.h"
+#include "optimizer/pathnode.h"
+#include "optimizer/planmain.h"
+#include "optimizer/restrictinfo.h"
+#include "optimizer/var.h"
+#include "port.h"
+#include "storage/fd.h"
+#include "utils/array.h"
+#include "utils/builtins.h"
+#include "utils/date.h"
+#include "utils/datetime.h"
+#include "utils/int8.h"
+#include "utils/timestamp.h"
+#include "utils/hsearch.h"
+#include "utils/lsyscache.h"
+#include "utils/memutils.h"
+#include "utils/rel.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -238,8 +267,8 @@ int StreamReaderFree(StreamReader* streamReader)
  *
  * @return 0 for success, 1 for failure
  */
-int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind,
-		FILE* file, long offset, long limit, CompressionParameters* parameters)
+int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file,
+		long offset, long limit, CompressionParameters* parameters)
 {
 
 	if (streamReader->stream != NULL)
@@ -252,8 +281,8 @@ int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind,
 		streamReader->stream = NULL;
 	}
 
-	streamReader->stream = FileStreamInit(file, offset, limit,
-			parameters->compressionBlockSize, parameters->compressionKind);
+	streamReader->stream = FileStreamInit(file, offset, limit, parameters->compressionBlockSize,
+			parameters->compressionKind);
 
 	switch (streamKind)
 	{
@@ -371,8 +400,7 @@ static int ReadByte(StreamReader* byteReaderState, uint8_t *result)
  *
  * @return 0 for success, -1 for failure
  */
-static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState,
-		uint64_t *result)
+static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState, uint64_t *result)
 {
 	int bytesRead = 0;
 	char step = 0;
@@ -492,55 +520,8 @@ static int ReadBinary(StreamReader* binaryReaderState, uint8_t* data, int length
 	return 0;
 }
 
-int ReadDictionary(FieldReader* fieldReader)
-{
-	PrimitiveFieldReader *primitiveReader =
-			(PrimitiveFieldReader *) fieldReader->fieldReader;
-	StreamReader *integerStreamReader = NULL;
-	StreamReader *binaryReader = NULL;
-	int dictionaryIterator = 0;
-	int result = 0;
-	uint64_t wordLength = 0;
-
-	if (primitiveReader->dictionary == NULL)
-	{
-		/* if dictionary is NULL, read the whole dictionary to the memory */
-		primitiveReader->dictionary =
-		alloc(sizeof(char*) * primitiveReader->dictionarySize);
-		primitiveReader->wordLength =
-		alloc(sizeof(int) * primitiveReader->dictionarySize);
-
-		integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
-		binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
-
-		/* read the dictionary */
-		for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
-				++dictionaryIterator)
-		{
-			result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
-			if (result < 0)
-			{
-				return -1;
-			}
-
-			primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
-			primitiveReader->dictionary[dictionaryIterator] = alloc(wordLength + 1);
-			result = ReadBinary(binaryReader,
-					(uint8_t*) primitiveReader->dictionary[dictionaryIterator],
-					(int) wordLength);
-			primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
-
-			if (result < 0)
-			{
-				return -1;
-			}
-		}
-	}
-	return 0;
-}
-
 /**
- * Reads a primitive type from the reader
+ * Helper function to read a primitive type from the reader
  *
  * @param reader
  * @param value to store the data
@@ -550,8 +531,7 @@ int ReadDictionary(FieldReader* fieldReader)
  */
 static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* length)
 {
-	PrimitiveFieldReader* primitiveReader =
-			(PrimitiveFieldReader*) fieldReader->fieldReader;
+	PrimitiveFieldReader* primitiveReader = (PrimitiveFieldReader*) fieldReader->fieldReader;
 
 	StreamReader* presentStreamReader = &fieldReader->presentBitReader;
 	StreamReader* booleanStreamReader = NULL;
@@ -623,8 +603,7 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 			binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
 
 			/* read the dictionary */
-			for (dictionaryIterator = 0;
-					dictionaryIterator < primitiveReader->dictionarySize;
+			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
 					++dictionaryIterator)
 			{
 				result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
@@ -651,7 +630,6 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadInteger(fieldReader->kind, integerStreamReader, &index);
 		value->binary = primitiveReader->dictionary[index];
-//		value->binary = primitiveReader->dictionary + primitiveReader->wordLength[index];
 		break;
 	case FIELD_TYPE__KIND__BYTE:
 		byteStreamReader = &primitiveReader->readers[DATA_STREAM];
@@ -708,6 +686,15 @@ static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* l
 	return result;
 }
 
+/*
+ * Helper function to read list from the stream.
+ *
+ * @param fieldReader field to read
+ * @param field structure to put the values
+ * @param length pointer to store the length of the list
+ *
+ * @return -1 for error, 0 for not-null and 1 for null
+ */
 static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 {
 	ListFieldReader* listReader = fieldReader->fieldReader;
@@ -719,8 +706,7 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 	char isPresent = 0;
 	FieldValue* value = NULL;
 
-	if (fieldReader->hasPresentBitReader
-			&& (isPresent = ReadBoolean(presentStreamReader)) == 0)
+	if (fieldReader->hasPresentBitReader && (isPresent = ReadBoolean(presentStreamReader)) == 0)
 	{
 		/* not present, return 1 as null */
 		return 1;
@@ -762,6 +748,15 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 	return 0;
 }
 
+/*
+ * Reads one field from the file
+ *
+ * @param fieldReader field to read
+ * @param field structure to put the values
+ * @param length length of the list or the size of the binary field
+ *
+ * @return -1 for error, 0 for not-null, 1 for null
+ */
 int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length)
 {
 	field->list = NULL;
@@ -961,4 +956,193 @@ int FieldReaderFree(FieldReader* reader)
 	}
 
 	return 0;
+}
+
+Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
+{
+	Datum columnValue = 0;
+	PrimitiveFieldReader* primitiveReader = (PrimitiveFieldReader*) fieldReader->fieldReader;
+
+	StreamReader* presentStreamReader = &fieldReader->presentBitReader;
+	StreamReader* booleanStreamReader = NULL;
+	StreamReader* integerStreamReader = NULL;
+	StreamReader* fpStreamReader = NULL;
+	StreamReader* binaryReader = NULL;
+	StreamReader *nanoSecondsReader = NULL;
+
+	char isPresent = 0;
+	int64_t data64 = 0;
+	uint64_t udata64 = 0;
+	float floatData = 0;
+	double doubleData = 0;
+	char* dictionaryItem = NULL;
+	int dictionaryIterator = 0;
+	uint64_t wordLength = 0;
+	int64_t seconds = 0;
+	int newNanos = 0;
+	int result = 0;
+
+	if (fieldReader->hasPresentBitReader)
+	{
+		isPresent = ReadBoolean(presentStreamReader);
+		if (isPresent == 0)
+		{
+			return 1;
+		}
+		else if (isPresent < 0)
+		{
+			return -1;
+		}
+	}
+
+	switch (fieldReader->psqlKind)
+	{
+	case BOOLOID:
+	{
+		booleanStreamReader = &primitiveReader->readers[DATA_STREAM];
+		columnValue = BoolGetDatum(ReadBoolean(booleanStreamReader));
+		break;
+	}
+	case INT2OID:
+	case INT4OID:
+	case INT8OID:
+	{
+		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
+		result = ReadInteger(fieldReader->kind, integerStreamReader, &udata64);
+		data64 = ToSignedInteger(udata64);
+		switch (fieldReader->psqlKind)
+		{
+		case INT2OID:
+			columnValue = Int16GetDatum(data64);
+			break;
+		case INT4OID:
+			columnValue = Int32GetDatum(data64);
+			break;
+		case INT8OID:
+			columnValue = Int64GetDatum(data64);
+			break;
+		default:
+			break;
+		}
+		break;
+	}
+	case FLOAT4OID:
+	{
+		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
+		result = ReadFloat(fpStreamReader, &floatData);
+		doubleData = floatData;
+		columnValue = Float8GetDatum(doubleData);
+		break;
+	}
+	case FLOAT8OID:
+	{
+		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
+		result = ReadDouble(fpStreamReader, &doubleData);
+		columnValue = Float8GetDatum(doubleData);
+		break;
+	}
+	case BPCHAROID:
+	case VARCHAROID:
+	case TEXTOID:
+	{
+		if (primitiveReader->dictionary == NULL)
+		{
+			/* if dictionary is NULL, read the whole dictionary to the memory */
+			primitiveReader->dictionary =
+			alloc(sizeof(char*) * primitiveReader->dictionarySize);
+			primitiveReader->wordLength =
+			alloc(sizeof(int) * primitiveReader->dictionarySize);
+
+			integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
+			binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
+
+			/* read the dictionary */
+			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
+					++dictionaryIterator)
+			{
+				result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
+				if (result < 0)
+				{
+					return -1;
+				}
+
+				primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
+				primitiveReader->dictionary[dictionaryIterator] = alloc(wordLength + 1);
+				result = ReadBinary(binaryReader,
+						(uint8_t*) primitiveReader->dictionary[dictionaryIterator],
+						(int) wordLength);
+				primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
+				if (result < 0)
+				{
+					return -1;
+				}
+			}
+		}
+
+		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
+		result = ReadInteger(fieldReader->kind, integerStreamReader, &udata64);
+		dictionaryItem = primitiveReader->dictionary[udata64];
+
+		switch (fieldReader->psqlKind)
+		{
+		case BPCHAROID:
+		{
+			columnValue = DirectFunctionCall3(bpcharin, CStringGetDatum(dictionaryItem),
+					ObjectIdGetDatum(InvalidOid),
+					Int32GetDatum(fieldReader->columnTypeMod));
+			break;
+		}
+		case VARCHAROID:
+		{
+			columnValue = DirectFunctionCall3(varcharin, CStringGetDatum(dictionaryItem),
+					ObjectIdGetDatum(InvalidOid),
+					Int32GetDatum(fieldReader->columnTypeMod));
+			break;
+		}
+		case TEXTOID:
+		{
+			columnValue = CStringGetTextDatum(dictionaryItem);
+			break;
+		}
+		default:
+			break;
+		}
+		break;
+	}
+	case DATEOID:
+	case TIMESTAMPOID:
+	{
+		/* seconds primitiveReader */
+		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
+		result = ReadInteger(FIELD_TYPE__KIND__LONG, integerStreamReader, &udata64);
+		seconds = ToSignedInteger(udata64);
+		seconds += ORC_DIFF_POSTGRESQL;
+
+		if (fieldReader->psqlKind == DATEOID)
+		{
+			/* if this is a date type, don't read nsec stream at all */
+			columnValue = DateADTGetDatum(seconds / SECONDS_PER_DAY);
+		}
+		else
+		{
+			/* nano seconds primitiveReader */
+			nanoSecondsReader = &primitiveReader->readers[SECONDARY_STREAM];
+			result |= ReadInteger(FIELD_TYPE__KIND__INT, nanoSecondsReader, &udata64);
+			newNanos = ParseNanos((long) udata64);
+
+			columnValue = TimestampGetDatum(seconds * MICROSECONDS_PER_SECOND +
+					newNanos / NANOSECONDS_PER_MICROSECOND);
+		}
+		break;
+	}
+	default:
+		break;
+	}
+
+	if (result)
+	{
+		LogError("Error while reading column");
+	}
+
+	return columnValue;
 }

@@ -29,9 +29,10 @@
 /* timestamp related values */
 #define SECONDS_PER_DAY					86400
 #define MICROSECONDS_PER_SECOND			1000000L
-#define NANOSECONDS_PER_MICROSECONDS	1000
+#define NANOSECONDS_PER_MICROSECOND		1000
 #define POSTGRESQL_EPOCH_IN_SECONDS		946677600L
 #define ORC_EPOCH_IN_SECONDS			1420063200L
+#define ORC_DIFF_POSTGRESQL				473385600L
 
 #define ToUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
 #define ToSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
@@ -144,8 +145,6 @@ typedef struct
 	FieldReader** fields;
 } StructFieldReader;
 
-int FieldReaderFree(FieldReader* reader);
-
 int StreamReaderFree(StreamReader* streamReader);
 int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file,
 		long offset, long limit, CompressionParameters* parameters);
@@ -155,8 +154,10 @@ int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FIL
  * The returned value is <0 for error, 1 for null, 0 for not-null value
  */
 int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
-
 int ReadDictionary(FieldReader* fieldReader);
+int FieldReaderFree(FieldReader* reader);
+
+Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader);
 
 /**
  * Helper functions to get the kth stream and its type
