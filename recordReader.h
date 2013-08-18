@@ -138,7 +138,7 @@ typedef struct
 int FieldReaderFree(FieldReader* reader);
 
 int StreamReaderFree(StreamReader* streamReader);
-int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, char* fileName, long offset, long limit,
+int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file, long offset, long limit,
 		CompressionParameters* parameters);
 
 /**

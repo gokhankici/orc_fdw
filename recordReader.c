@@ -239,7 +239,7 @@ int StreamReaderFree(StreamReader* streamReader)
  * @return 0 for success, 1 for failure
  */
 int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind,
-		char* fileName, long offset, long limit, CompressionParameters* parameters)
+		FILE* file, long offset, long limit, CompressionParameters* parameters)
 {
 
 	if (streamReader->stream != NULL)
@@ -252,7 +252,7 @@ int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind,
 		streamReader->stream = NULL;
 	}
 
-	streamReader->stream = FileStreamInit(fileName, offset, limit,
+	streamReader->stream = FileStreamInit(file, offset, limit,
 			parameters->compressionBlockSize, parameters->compressionKind);
 
 	switch (streamKind)

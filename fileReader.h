@@ -21,15 +21,15 @@ typedef struct
 	int noOfSelectedColumns;
 } PostgresQueryInfo;
 
-PostScript* PostScriptInit(char* orcFileName, long* postScriptSizeOffset, CompressionParameters* parameters);
+PostScript* PostScriptInit(FILE* file, long* postScriptSizeOffset, CompressionParameters* parameters);
 
-Footer* FileFooterInit(char* orcFileName, int footerOffset, long footerSize, CompressionParameters* parameters);
+Footer* FileFooterInit(FILE* file, int footerOffset, long footerSize, CompressionParameters* parameters);
 
-StripeFooter* StripeFooterInit(char* orcFile, StripeInformation* stripeInfo, CompressionParameters* parameters);
+StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo, CompressionParameters* parameters);
 
 int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* query);
 
-int FieldReaderInit(FieldReader* fieldReader, char* orcFileName, StripeInformation* stripe, StripeFooter* stripeFooter,
+int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe, StripeFooter* stripeFooter,
 		CompressionParameters* parameters);
 
 #endif /* FILEREADER_H_ */

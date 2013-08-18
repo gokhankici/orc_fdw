@@ -72,6 +72,7 @@ typedef struct OrcFdwOptions
 typedef struct OrcFdwExecState
 {
 	char *filename;
+	FILE *file;
 	PostScript *postScript;
 	Footer *footer;
 	StripeFooter *stripeFooter;

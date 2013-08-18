@@ -21,16 +21,11 @@
  *
  * @return NULL for failure, non-NULL for success
  */
-static FileBuffer* FileBufferInit(char* filePath, long offset, long limit, int bufferSize)
+static FileBuffer* FileBufferInit(FILE* file, long offset, long limit, int bufferSize)
 {
 	FileBuffer* fileBuffer = alloc(sizeof(FileBuffer));
 	int result = 0;
-	if (filePath == NULL)
-	{
-		freeMemory(fileBuffer);
-		return NULL;
-	}
-	fileBuffer->file = MyOpenFile(filePath, "r");
+	fileBuffer->file = file;
 	if (fileBuffer->file == NULL)
 	{
 		freeMemory(fileBuffer);
@@ -70,21 +65,16 @@ static FileBuffer* FileBufferInit(char* filePath, long offset, long limit, int b
  */
 static int FileBufferFree(FileBuffer* fileBuffer)
 {
-	int result = 0;
-
 	if (fileBuffer == NULL)
 	{
-		return -1;
+		return 0;
 	}
-	result = MyCloseFile(fileBuffer->file);
-	if (result)
-	{
-		return -1;
-	}
+
 	if (fileBuffer->buffer)
 	{
 		freeMemory(fileBuffer->buffer);
 	}
+
 	freeMemory(fileBuffer);
 
 	return 0;
@@ -108,7 +98,7 @@ static int FileBufferFill(FileBuffer* fileBuffer)
 		return -1;
 	}
 
-	if (fileBuffer->offset + fileBuffer->length == fileBuffer->limit)
+	if (fileBuffer->offset == fileBuffer->limit)
 	{
 		/* already reached end of file stream */
 		return 0;
@@ -119,13 +109,12 @@ static int FileBufferFill(FileBuffer* fileBuffer)
 
 		memmove(fileBuffer->buffer, fileBuffer->buffer + fileBuffer->position,
 				fileBuffer->length - fileBuffer->position);
-		fileBuffer->offset += fileBuffer->position;
 		fileBuffer->length -= fileBuffer->position;
 		fileBuffer->position = 0;
 	}
 
 	bytesRead =
-			min(fileBuffer->limit - (fileBuffer->offset + fileBuffer->length), fileBuffer->bufferSize - fileBuffer->length);
+	min(fileBuffer->limit - fileBuffer->offset, fileBuffer->bufferSize - fileBuffer->length);
 
 	if (bytesRead < 0)
 	{
@@ -138,25 +127,22 @@ static int FileBufferFill(FileBuffer* fileBuffer)
 		return 0;
 	}
 
-	result = fread(fileBuffer->buffer + fileBuffer->length, 1, bytesRead,
-			fileBuffer->file);
-	/**
-	 * Initialize a FileStream.
-	 *
-	 * @param filePath file to read
-	 * @param offset starting position in the file
-	 * @param limit end of the stream in the file
-	 * @param bufferSize the maximum size that can be read at a time.
-	 *
-	 * @return NULL for failure, non-NULL for success
-	 */
+	/* seek to the current position since the same file is used by many streams */
+	if (ftell(fileBuffer->file) != fileBuffer->offset)
+	{
+		fseek(fileBuffer->file, fileBuffer->offset, SEEK_SET);
+	}
+
+	result = fread(fileBuffer->buffer + fileBuffer->length, 1, bytesRead, fileBuffer->file);
+
 	if (result != bytesRead)
 	{
-		fprintf(stderr, "Error while reading file\n");
+		LogError("Error while reading file\n");
 		return -1;
 	}
 
 	fileBuffer->length += bytesRead;
+	fileBuffer->offset += bytesRead;
 
 	return bytesRead;
 }
@@ -228,9 +214,23 @@ static int FileBufferReadByte(FileBuffer* fileBuffer, char *value)
 		}
 	}
 
-	*value = fileBuffer->buffer[fileBuffer->position++];
+	fileBuffer->position++;
+	*value = fileBuffer->buffer[fileBuffer->position];
 
 	return 0;
+}
+
+/**
+ * Bytes left in the stream. Remaining length is calculated by
+ * # unread bytes in the file + # unread bytes in the internal buffer
+ *
+ * @param fileStream stream to query
+ *
+ * @return no of bytes left unread in the stream
+ */
+static long FileBufferBytesLeft(FileBuffer* fileBuffer)
+{
+	return (fileBuffer->limit - fileBuffer->offset) + (fileBuffer->length - fileBuffer->position);
 }
 
 /**
@@ -244,7 +244,7 @@ static int FileBufferReadByte(FileBuffer* fileBuffer, char *value)
  */
 static int FileBufferReadRemaining(FileBuffer* fileBuffer, char** data, int* dataLength)
 {
-	int remainingLength = fileBuffer->limit - (fileBuffer->offset + fileBuffer->position);
+	int remainingLength = FileBufferBytesLeft(fileBuffer);
 
 	if (remainingLength <= fileBuffer->bufferSize)
 	{
@@ -255,25 +255,11 @@ static int FileBufferReadRemaining(FileBuffer* fileBuffer, char** data, int* dat
 	}
 	else
 	{
-		if (fileBuffer->position > 0)
-		{
-			memmove(fileBuffer->buffer, fileBuffer->buffer + fileBuffer->position,
-					fileBuffer->length - fileBuffer->position);
-			fileBuffer->offset += fileBuffer->position;
-			fileBuffer->length -= fileBuffer->position;
-			fileBuffer->position = 0;
-		}
-
-		/* else allocate a new block and read into it */
+		/* else allocate a new, bigger block */
 		fileBuffer->buffer = reAllocateMemory(fileBuffer->buffer, remainingLength);
 		fileBuffer->bufferSize = remainingLength;
 
-		/* update offsets and positions after copy */
-		fileBuffer->offset += fileBuffer->position;
-		fileBuffer->length -= fileBuffer->position;
-		fileBuffer->position = 0;
-
-		/* finally fill the new buffer */
+		/* fill the new buffer */
 		if (FileBufferFill(fileBuffer))
 		{
 			return -1;
@@ -287,18 +273,6 @@ static int FileBufferReadRemaining(FileBuffer* fileBuffer, char** data, int* dat
 }
 
 /**
- * Bytes left in the stream
- *
- * @param fileStream stream to query
- *
- * @return no of bytes left unread in the stream
- */
-static long FileBufferBytesLeft(FileBuffer* fileStream)
-{
-	return fileStream->limit - (fileStream->offset + fileStream->position);
-}
-
-/**
  * Initialize a CompressedFileStream.
  *
  * @param filePath file to read
@@ -309,8 +283,7 @@ static long FileBufferBytesLeft(FileBuffer* fileStream)
  *
  * @return NULL for failure, non-NULL for success
  */
-FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize,
-		CompressionKind kind)
+FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize, CompressionKind kind)
 {
 	FileStream *stream = alloc(sizeof(FileStream));
 
@@ -323,7 +296,7 @@ FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSi
 		stream->bufferSize = bufferSize;
 	}
 
-	stream->fileBuffer = FileBufferInit(filePath, offset, limit, stream->bufferSize);
+	stream->fileBuffer = FileBufferInit(file, offset, limit, stream->bufferSize);
 
 	if (stream->fileBuffer == NULL)
 	{
@@ -408,13 +381,11 @@ static int ReadNextCompressedBlock(FileStream* stream)
 	}
 
 	/* first 3 bytes are the chunk contains the chunk length, last bit is for "original" */
-	chunkLength = ((0xff & header[2]) << 15) | ((0xff & header[1]) << 7)
-			| ((0xff & header[0]) >> 1);
+	chunkLength = ((0xff & header[2]) << 15) | ((0xff & header[1]) << 7) | ((0xff & header[0]) >> 1);
 
 	if (chunkLength > bufferSize)
 	{
-		LogError3("Buffer size too small. size = %d needed = %d\n", bufferSize,
-				chunkLength);
+		LogError3("Buffer size too small. size = %d needed = %d\n", bufferSize, chunkLength);
 		return -1;
 	}
 
@@ -465,8 +436,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 		switch (stream->compressionKind)
 		{
 		case COMPRESSION_KIND__ZLIB:
-			result = InflateZLIB((uint8_t*) compressed, chunkLength,
-					(uint8_t*) stream->data, &stream->length);
+			result = InflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->data, &stream->length);
 
 			if (result != Z_OK)
 			{
@@ -476,8 +446,8 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 			break;
 		case COMPRESSION_KIND__SNAPPY:
-			result = snappy_uncompressed_length((const char*) compressed,
-					(size_t) chunkLength, &snappyUncompressedSize);
+			result = snappy_uncompressed_length((const char*) compressed, (size_t) chunkLength,
+					&snappyUncompressedSize);
 
 			if (result != 1)
 			{
@@ -489,18 +459,16 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 			if (stream->length > stream->bufferSize)
 			{
-				LogError3("Uncompressed stream size (%d) exceeds buffer size (%d\n",
-						stream->length, stream->bufferSize);
+				LogError3("Uncompressed stream size (%d) exceeds buffer size (%d\n", stream->length,
+						stream->bufferSize);
 				return -1;
 			}
 
-			result = snappy_uncompress((const char*) compressed, (size_t) chunkLength,
-					(char*) stream->data);
+			result = snappy_uncompress((const char*) compressed, (size_t) chunkLength, (char*) stream->data);
 
 			if (result)
 			{
-				LogError2("Error while uncompressing with snappy. Error code %d\n",
-						result);
+				LogError2("Error while uncompressing with snappy. Error code %d\n", result);
 				return -1;
 			}
 
@@ -579,8 +547,7 @@ char* FileStreamRead(FileStream* stream, int *length)
 			return NULL;
 		}
 
-		memcpy(stream->tempBuffer + bytesCurrentlyRead, stream->data,
-				requestedLength - bytesCurrentlyRead);
+		memcpy(stream->tempBuffer + bytesCurrentlyRead, stream->data, requestedLength - bytesCurrentlyRead);
 		stream->position += requestedLength - bytesCurrentlyRead;
 
 		data = stream->tempBuffer;
@@ -683,8 +650,7 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 				return -1;
 			}
 
-			if (stream->tempBufferSize - tempBufferPosition
-					< stream->length - stream->position)
+			if (stream->tempBufferSize - tempBufferPosition < stream->length - stream->position)
 			{
 				/* if there is not space in the new buffer double its size */
 				stream->tempBufferSize *= 2;
@@ -718,6 +684,5 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
  */
 int FileStreamEOF(FileStream* fileStream)
 {
-	return fileStream->position == fileStream->length
-			&& FileBufferBytesLeft(fileStream->fileBuffer) == 0;
+	return fileStream->position == fileStream->length && FileBufferBytesLeft(fileStream->fileBuffer) == 0;
 }

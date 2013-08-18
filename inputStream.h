@@ -25,7 +25,7 @@ typedef struct
 	/* Input stream for reading from the file */
 	FILE* file;
 
-	/* offset of the start of the buffer in the file */
+	/* offset of the next unread byte in the file */
 	long offset;
 	/* end of the file stream in the file */
 	long limit;
@@ -74,8 +74,7 @@ typedef struct
 	char* allocatedMemory;
 } FileStream;
 
-FileStream* FileStreamInit(char* filePath, long offset, long limit, int bufferSize,
-		CompressionKind kind);
+FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize, CompressionKind kind);
 int FileStreamFree(FileStream*);
 char* FileStreamRead(FileStream*, int *length);
 int FileStreamEOF(FileStream* fileStream);

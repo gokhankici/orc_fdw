@@ -1,3 +1,4 @@
+drop foreign table if exists lineitem;
 create foreign table lineitem(
     l_orderkey INT8,
     l_partkey INT8,
@@ -9,11 +10,11 @@ create foreign table lineitem(
     l_tax FLOAT8,
     l_returnflag VARCHAR,
     l_linestatus VARCHAR,
-    l_shipdate INT8,
-    l_commitdate INT8,
-    l_receiptdate INT8,
+    l_shipdate TIMESTAMP,
+    l_commitdate TIMESTAMP,
+    l_receiptdate TIMESTAMP,
     l_shipinstruct VARCHAR,
     l_shipmode VARCHAR,
     l_comment VARCHAR
 ) server orc_server
-options(filename '/home/gokhan/orc-files/output_gzip_lcomment.orc');
+options(filename '/home/gokhan/orc-files/lineitem_gzip.orc');

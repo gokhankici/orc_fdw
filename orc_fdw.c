@@ -327,12 +327,12 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 	{
 		stripeInfo = footer->stripes[execState->nextStripeNumber];
 
-		stripeFooter = StripeFooterInit(execState->filename, stripeInfo, &execState->compressionParameters);
+		stripeFooter = StripeFooterInit(execState->file, stripeInfo, &execState->compressionParameters);
 
 		/* switch to orc context for reading data */
 		MemoryContextSwitchTo(execState->orcContext);
 
-		result = FieldReaderInit(execState->recordReader, execState->filename, stripeInfo, stripeFooter,
+		result = FieldReaderInit(execState->recordReader, execState->file, stripeInfo, stripeFooter,
 				&execState->compressionParameters);
 
 		MemoryContextSwitchTo(oldContext);
@@ -432,12 +432,13 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 
 	execState = (OrcFdwExecState *) palloc(sizeof(OrcFdwExecState));
 	execState->filename = options->filename;
+	execState->file = AllocateFile(execState->filename, "r");
 	execState->currentLineNumber = 0;
 	execState->nextStripeNumber = 0;
 	execState->stripeFooter = NULL;
 	execState->currentStripeInfo = NULL;
 
-	postScript = PostScriptInit(options->filename, &postScriptOffset, &execState->compressionParameters);
+	postScript = PostScriptInit(execState->file, &postScriptOffset, &execState->compressionParameters);
 
 	if (postScript == NULL)
 	{
@@ -446,7 +447,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 
 	execState->postScript = postScript;
 
-	footer = FileFooterInit(options->filename, postScriptOffset - postScript->footerlength, postScript->footerlength,
+	footer = FileFooterInit(execState->file, postScriptOffset - postScript->footerlength, postScript->footerlength,
 			&execState->compressionParameters);
 
 	if (footer == NULL)
@@ -558,6 +559,11 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 	{
 		post_script__free_unpacked(executionState->postScript, NULL);
 		executionState->postScript = NULL;
+	}
+
+	if (executionState->file)
+	{
+		FreeFile(executionState->file);
 	}
 }
 
@@ -911,13 +917,16 @@ static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod
 		/* timestamp is in microseconds */
 		deltaTime = fieldValue->time.tv_sec * MICROSECONDS_PER_SECOND;
 		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECONDS;
-		elog(WARNING, "%ld", deltaTime);
 		deltaTime -= POSTGRESQL_EPOCH_IN_SECONDS * MICROSECONDS_PER_SECOND;
 		columnValue = TimestampGetDatum(deltaTime);
 		break;
 	}
 	case TIMESTAMPTZOID:
 	{
+		/* timestamp is in microseconds */
+		deltaTime = fieldValue->time.tv_sec * MICROSECONDS_PER_SECOND;
+		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECONDS;
+		deltaTime -= POSTGRESQL_EPOCH_IN_SECONDS * MICROSECONDS_PER_SECOND;
 		columnValue = TimestampTzGetDatum(fieldValue->time.tv_sec);
 		break;
 	}
