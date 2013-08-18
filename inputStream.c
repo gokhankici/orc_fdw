@@ -214,8 +214,8 @@ static int FileBufferReadByte(FileBuffer* fileBuffer, char *value)
 		}
 	}
 
-	fileBuffer->position++;
 	*value = fileBuffer->buffer[fileBuffer->position];
+	fileBuffer->position++;
 
 	return 0;
 }
