@@ -74,11 +74,15 @@ typedef struct
 	char* allocatedMemory;
 } FileStream;
 
-FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize, CompressionKind kind);
+/*
+ * Methods for using a file stream.
+ */
+FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize,
+		CompressionKind kind);
 int FileStreamFree(FileStream*);
 char* FileStreamRead(FileStream*, int *length);
-int FileStreamEOF(FileStream* fileStream);
-int FileStreamReadRemaining(FileStream*, char** data, int* dataLength);
 int FileStreamReadByte(FileStream* stream, char* value);
+int FileStreamReadRemaining(FileStream*, char** data, int* dataLength);
+int FileStreamEOF(FileStream* fileStream);
 
 #endif /* INPUTSTREAM_H_ */

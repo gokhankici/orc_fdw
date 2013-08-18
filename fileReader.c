@@ -37,7 +37,8 @@
 #include "util.h"
 #include "storage/fd.h"
 
-static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, PostgresQueryInfo* query);
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
+		PostgresQueryInfo* query);
 
 /**
  * Reads the postscript from the orc file and returns the postscript. Stores its offset to parameter.
@@ -87,7 +88,8 @@ PostScript* PostScriptInit(FILE* file, long* postScriptOffset, CompressionParame
 		return NULL;
 	}
 
-	parameters->compressionBlockSize = postScript->has_compressionblocksize ? postScript->compressionblocksize : 0;
+	parameters->compressionBlockSize =
+			postScript->has_compressionblocksize ? postScript->compressionblocksize : 0;
 	parameters->compressionKind = postScript->has_compression ? postScript->compression : 0;
 
 	return postScript;
@@ -102,7 +104,8 @@ PostScript* PostScriptInit(FILE* file, long* postScriptOffset, CompressionParame
  *
  * @return NULL for failure, non-NULL for footer
  */
-Footer* FileFooterInit(FILE* file, int footerOffset, long footerSize, CompressionParameters* parameters)
+Footer* FileFooterInit(FILE* file, int footerOffset, long footerSize,
+		CompressionParameters* parameters)
 {
 	Footer* footer = NULL;
 	FileStream* stream = NULL;
@@ -110,8 +113,8 @@ Footer* FileFooterInit(FILE* file, int footerOffset, long footerSize, Compressio
 	int uncompressedFooterSize = 0;
 	int result = 0;
 
-	stream = FileStreamInit(file, footerOffset, footerOffset + footerSize, parameters->compressionBlockSize,
-			parameters->compressionKind);
+	stream = FileStreamInit(file, footerOffset, footerOffset + footerSize,
+			parameters->compressionBlockSize, parameters->compressionKind);
 
 	if (stream == NULL)
 	{
@@ -149,7 +152,8 @@ Footer* FileFooterInit(FILE* file, int footerOffset, long footerSize, Compressio
  *
  * @return NULL for failure, non-NULL for stripe footer
  */
-StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo, CompressionParameters* parameters)
+StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo,
+		CompressionParameters* parameters)
 {
 	StripeFooter* stripeFooter = NULL;
 	FileStream *stream = NULL;
@@ -158,8 +162,8 @@ StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo, Compre
 	long stripeFooterOffset = 0;
 	int result = 0;
 
-	stripeFooterOffset = stripeInfo->offset + (stripeInfo->has_indexlength ? stripeInfo->indexlength : 0)
-			+ stripeInfo->datalength;
+	stripeFooterOffset = stripeInfo->offset
+			+ (stripeInfo->has_indexlength ? stripeInfo->indexlength : 0) + stripeInfo->datalength;
 	stream = FileStreamInit(file, stripeFooterOffset, stripeFooterOffset + stripeInfo->footerlength,
 			parameters->compressionBlockSize, parameters->compressionKind);
 
@@ -177,7 +181,8 @@ StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo, Compre
 		LogError("Error while uncompressing file footer");
 	}
 
-	stripeFooter = stripe_footer__unpack(NULL, uncompressedStripeFooterSize, (uint8_t*) stripeFooterBuffer);
+	stripeFooter = stripe_footer__unpack(NULL, uncompressedStripeFooterSize,
+			(uint8_t*) stripeFooterBuffer);
 
 	if (stripeFooter == NULL)
 	{
@@ -198,7 +203,6 @@ int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* 
 	reader->required = 1;
 
 	reader->presentBitReader.stream = NULL;
-	reader->lengthReader.stream = NULL;
 
 	reader->fieldReader = alloc(sizeof(StructFieldReader));
 	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, query);
@@ -213,7 +217,8 @@ int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* 
  *
  * @return 0 for success and -1 for failure
  */
-static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, PostgresQueryInfo* query)
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
+		PostgresQueryInfo* query)
 {
 	FieldType** types = footer->types;
 	FieldType* root = footer->types[0];
@@ -242,7 +247,6 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 		field->kind = type->kind;
 		field->hasPresentBitReader = 0;
 		field->presentBitReader.stream = NULL;
-		field->lengthReader.stream = NULL;
 
 		/* requested columns are sorted according to their index, we can trust its order */
 		if (queryColumnIterator < query->noOfSelectedColumns
@@ -268,6 +272,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 			field->fieldReader = alloc(sizeof(ListFieldReader));
 
 			listReader = field->fieldReader;
+			listReader->lengthReader.stream = NULL;
 
 			/* initialize list item reader */
 			listItemReader = &listReader->itemReader;
@@ -320,11 +325,11 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 	return 0;
 }
 
-static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* currentDataOffset, int* streamNo,
-		StripeFooter* stripeFooter, CompressionParameters* parameters);
+static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* currentDataOffset,
+		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters);
 
-int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe, StripeFooter* stripeFooter,
-		CompressionParameters* parameters)
+int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe,
+		StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
 	long currentDataOffset = 0;
 	int streamNo = 0;
@@ -339,7 +344,8 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 		stream = stripeFooter->streams[streamNo];
 	}
 
-	return FieldReaderInitHelper(fieldReader, file, &currentDataOffset, &streamNo, stripeFooter, parameters);
+	return FieldReaderInitHelper(fieldReader, file, &currentDataOffset, &streamNo, stripeFooter,
+			parameters);
 }
 
 /**
@@ -354,8 +360,8 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
  *
  * @return 0 for success and -1 for failure
  */
-static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* currentDataOffset, int* streamNo,
-		StripeFooter* stripeFooter, CompressionParameters* parameters)
+static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* currentDataOffset,
+		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
 	StructFieldReader *structFieldReader = NULL;
 	ListFieldReader *listFieldReader = NULL;
@@ -383,8 +389,8 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 	{
 		if (fieldReader->required)
 		{
-			result = StreamReaderInit(&fieldReader->presentBitReader, FIELD_TYPE__KIND__BOOLEAN, file,
-					*currentDataOffset, *currentDataOffset + stream->length, parameters);
+			result = StreamReaderInit(&fieldReader->presentBitReader, FIELD_TYPE__KIND__BOOLEAN,
+					file, *currentDataOffset, *currentDataOffset + stream->length, parameters);
 		}
 		else
 		{
@@ -414,8 +420,8 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 
 		if (fieldReader->required)
 		{
-			result = StreamReaderInit(&fieldReader->lengthReader, FIELD_TYPE__KIND__INT, file, *currentDataOffset,
-					*currentDataOffset + stream->length, parameters);
+			result = StreamReaderInit(&listFieldReader->lengthReader, FIELD_TYPE__KIND__INT, file,
+					*currentDataOffset, *currentDataOffset + stream->length, parameters);
 		}
 
 		if (result)
@@ -439,8 +445,8 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 			return -1;
 		}
 
-		return FieldReaderInitHelper(&listFieldReader->itemReader, file, currentDataOffset, streamNo,
-				stripeFooter, parameters);
+		return FieldReaderInitHelper(&listFieldReader->itemReader, file, currentDataOffset,
+				streamNo, stripeFooter, parameters);
 	case FIELD_TYPE__KIND__MAP:
 	case FIELD_TYPE__KIND__DECIMAL:
 	case FIELD_TYPE__KIND__UNION:
@@ -452,8 +458,8 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 		for (fieldNo = 0; fieldNo < structFieldReader->noOfFields; fieldNo++)
 		{
 			subField = structFieldReader->fields[fieldNo];
-			result = FieldReaderInitHelper(subField, file, currentDataOffset, streamNo, stripeFooter,
-					parameters);
+			result = FieldReaderInitHelper(subField, file, currentDataOffset, streamNo,
+					stripeFooter, parameters);
 
 			if (result)
 			{
@@ -470,7 +476,8 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 		{
 			if (primitiveFieldReader->dictionary)
 			{
-				for (dictionaryIterator = 0; dictionaryIterator < primitiveFieldReader->dictionarySize;
+				for (dictionaryIterator = 0;
+						dictionaryIterator < primitiveFieldReader->dictionarySize;
 						++dictionaryIterator)
 				{
 					freeMemory(primitiveFieldReader->dictionary[dictionaryIterator]);
@@ -506,8 +513,9 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 
 			if (fieldReader->required)
 			{
-				result = StreamReaderInit(&primitiveFieldReader->readers[dataStreamIterator], streamKind, file,
-						*currentDataOffset, *currentDataOffset + stream->length, parameters);
+				result = StreamReaderInit(&primitiveFieldReader->readers[dataStreamIterator],
+						streamKind, file, *currentDataOffset, *currentDataOffset + stream->length,
+						parameters);
 			}
 
 			if (result)

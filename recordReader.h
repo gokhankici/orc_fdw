@@ -25,7 +25,6 @@
 #define COMMON_STREAM_COUNT		1
 
 #define MAX_POSTSCRIPT_SIZE		255
-#define STREAM_BUFFER_SIZE		1024
 
 /* timestamp related values */
 #define SECONDS_PER_DAY					86400
@@ -37,7 +36,10 @@
 #define ToUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
 #define ToSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
 
-#define IsComplexType(type) (type == FIELD_TYPE__KIND__LIST || type == FIELD_TYPE__KIND__STRUCT || type == FIELD_TYPE__KIND__MAP)
+#define IsComplexType(type) \
+			  (type == FIELD_TYPE__KIND__LIST \
+			|| type == FIELD_TYPE__KIND__STRUCT \
+			|| type == FIELD_TYPE__KIND__MAP)
 
 typedef enum
 {
@@ -90,10 +92,13 @@ typedef struct
 
 } StreamReader;
 
+/**
+ * Base structure to represent a field reader.
+ * Its fieldreader variable contains the streams of the type.
+ */
 typedef struct
 {
 	StreamReader presentBitReader;
-	StreamReader lengthReader;
 	FieldType__Kind kind;
 
 	int orcColumnNo;
@@ -111,7 +116,7 @@ typedef struct
 } FieldReader;
 
 /**
- * For primitive types
+ * Reader for primitive types
  * (boolean, byte, binary, short, integer, long, float, double, string)
  */
 typedef struct
@@ -124,8 +129,12 @@ typedef struct
 	char** dictionary;
 } PrimitiveFieldReader;
 
+/*
+ * Reader for list types.
+ */
 typedef struct
 {
+	StreamReader lengthReader;
 	FieldReader itemReader;
 } ListFieldReader;
 
@@ -138,8 +147,8 @@ typedef struct
 int FieldReaderFree(FieldReader* reader);
 
 int StreamReaderFree(StreamReader* streamReader);
-int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file, long offset, long limit,
-		CompressionParameters* parameters);
+int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file,
+		long offset, long limit, CompressionParameters* parameters);
 
 /**
  * Reads one element from the type.

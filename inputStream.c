@@ -283,7 +283,8 @@ static int FileBufferReadRemaining(FileBuffer* fileBuffer, char** data, int* dat
  *
  * @return NULL for failure, non-NULL for success
  */
-FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize, CompressionKind kind)
+FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize,
+		CompressionKind kind)
 {
 	FileStream *stream = alloc(sizeof(FileStream));
 
@@ -381,7 +382,8 @@ static int ReadNextCompressedBlock(FileStream* stream)
 	}
 
 	/* first 3 bytes are the chunk contains the chunk length, last bit is for "original" */
-	chunkLength = ((0xff & header[2]) << 15) | ((0xff & header[1]) << 7) | ((0xff & header[0]) >> 1);
+	chunkLength = ((0xff & header[2]) << 15) | ((0xff & header[1]) << 7)
+			| ((0xff & header[0]) >> 1);
 
 	if (chunkLength > bufferSize)
 	{
@@ -415,6 +417,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 	else
 	{
 		stream->isNotCompressed = 0;
+
 		/**
 		 * Get back memory pointer into data pointer since previous stream may not be compressed
 		 * and we were file buffer data directly.
@@ -436,7 +439,8 @@ static int ReadNextCompressedBlock(FileStream* stream)
 		switch (stream->compressionKind)
 		{
 		case COMPRESSION_KIND__ZLIB:
-			result = InflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->data, &stream->length);
+			result = InflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->data,
+					&stream->length);
 
 			if (result != Z_OK)
 			{
@@ -464,7 +468,8 @@ static int ReadNextCompressedBlock(FileStream* stream)
 				return -1;
 			}
 
-			result = snappy_uncompress((const char*) compressed, (size_t) chunkLength, (char*) stream->data);
+			result = snappy_uncompress((const char*) compressed, (size_t) chunkLength,
+					(char*) stream->data);
 
 			if (result)
 			{
@@ -474,7 +479,8 @@ static int ReadNextCompressedBlock(FileStream* stream)
 
 			break;
 		default:
-			/* compression kind not supported */
+			/* other compression kinds are not supported */
+			LogError2("Compression kind is unsupported. ID: %d", stream->compressionKind);
 			return -1;
 		}
 	}
@@ -496,7 +502,7 @@ char* FileStreamRead(FileStream* stream, int *length)
 	int requestedLength = *length;
 	int result = 0;
 	char* data = NULL;
-	int bytesCurrentlyRead = 0;
+	int unreadByteSize = 0;
 
 	if (stream->compressionKind == COMPRESSION_KIND__NONE)
 	{
@@ -522,16 +528,17 @@ char* FileStreamRead(FileStream* stream, int *length)
 	}
 	else
 	{
+		/* use temp buffer to return the requested bytes */
+
 		if (stream->tempBufferSize < requestedLength)
 		{
-			stream->tempBuffer =
-			reAllocateMemory(stream->tempBuffer,requestedLength);
+			stream->tempBuffer = reAllocateMemory(stream->tempBuffer,requestedLength);
 			stream->tempBufferSize = requestedLength;
 		}
 
-		/* stash available data */
-		bytesCurrentlyRead = stream->length - stream->position;
-		memcpy(stream->tempBuffer, stream->data + stream->position, bytesCurrentlyRead);
+		/* copy unread bytes from the data buffer */
+		unreadByteSize = stream->length - stream->position;
+		memcpy(stream->tempBuffer, stream->data + stream->position, unreadByteSize);
 
 		result = ReadNextCompressedBlock(stream);
 
@@ -541,14 +548,15 @@ char* FileStreamRead(FileStream* stream, int *length)
 			return NULL;
 		}
 
-		if (stream->length < requestedLength - bytesCurrentlyRead)
+		if (stream->length < requestedLength - unreadByteSize)
 		{
-			LogError("Couldn't get enough bytes from the next block\n");
+			LogError("Requested data size exceeds compression block size\n");
 			return NULL;
 		}
 
-		memcpy(stream->tempBuffer + bytesCurrentlyRead, stream->data, requestedLength - bytesCurrentlyRead);
-		stream->position += requestedLength - bytesCurrentlyRead;
+		memcpy(stream->tempBuffer + unreadByteSize, stream->data,
+				requestedLength - unreadByteSize);
+		stream->position += requestedLength - unreadByteSize;
 
 		data = stream->tempBuffer;
 	}
@@ -609,10 +617,7 @@ int FileStreamReadByte(FileStream* stream, char* value)
 int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 {
 	int result = 0;
-//	char* newBuffer = NULL;
-//	char* tempBuffer = NULL;
 	int tempBufferPosition = 0;
-//	int newBufferSize = 0;
 
 	if (stream->compressionKind == COMPRESSION_KIND__NONE)
 	{
@@ -658,8 +663,6 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 				reAllocateMemory(stream->tempBuffer, stream->tempBufferSize);
 			}
 
-			assert(stream->position == 0);
-
 			memcpy(stream->tempBuffer + tempBufferPosition, stream->data, stream->length);
 			tempBufferPosition += stream->length;
 			stream->position = stream->length;
@@ -684,5 +687,6 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
  */
 int FileStreamEOF(FileStream* fileStream)
 {
-	return fileStream->position == fileStream->length && FileBufferBytesLeft(fileStream->fileBuffer) == 0;
+	return fileStream->position == fileStream->length
+			&& FileBufferBytesLeft(fileStream->fileBuffer) == 0;
 }

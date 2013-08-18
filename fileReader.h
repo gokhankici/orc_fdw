@@ -17,19 +17,23 @@ typedef struct
 
 typedef struct
 {
+	/* list of selected table columns and their properties */
 	PostgresColumnInfo* selectedColumns;
 	int noOfSelectedColumns;
 } PostgresQueryInfo;
 
-PostScript* PostScriptInit(FILE* file, long* postScriptSizeOffset, CompressionParameters* parameters);
+PostScript* PostScriptInit(FILE* file, long* postScriptSizeOffset,
+		CompressionParameters* parameters);
 
-Footer* FileFooterInit(FILE* file, int footerOffset, long footerSize, CompressionParameters* parameters);
+Footer* FileFooterInit(FILE* file, int footerOffset, long footerSize,
+		CompressionParameters* parameters);
 
-StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo, CompressionParameters* parameters);
+StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo,
+		CompressionParameters* parameters);
 
 int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* query);
 
-int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe, StripeFooter* stripeFooter,
-		CompressionParameters* parameters);
+int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe,
+		StripeFooter* stripeFooter, CompressionParameters* parameters);
 
 #endif /* FILEREADER_H_ */

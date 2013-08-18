@@ -731,7 +731,7 @@ static int ReadListItem(FieldReader* fieldReader, Field* field, int* length)
 		return -1;
 	}
 
-	result = ReadInteger(fieldReader->kind, &fieldReader->lengthReader, &listSize);
+	result = ReadInteger(fieldReader->kind, &listReader->lengthReader, &listSize);
 	if (result)
 	{
 		/* error while reading the list size */
@@ -934,7 +934,6 @@ int FieldReaderFree(FieldReader* reader)
 	}
 
 	StreamReaderFree(&reader->presentBitReader);
-	StreamReaderFree(&reader->lengthReader);
 
 	if (reader->fieldReader == NULL)
 	{
@@ -948,6 +947,7 @@ int FieldReaderFree(FieldReader* reader)
 		break;
 	case FIELD_TYPE__KIND__LIST:
 		listReader = (ListFieldReader*) reader->fieldReader;
+		StreamReaderFree(&listReader->lengthReader);
 		FieldReaderFree(&listReader->itemReader);
 		freeMemory(listReader);
 		break;
