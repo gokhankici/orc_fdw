@@ -68,18 +68,15 @@ static BlockNumber PageCount(const char *filename);
 static List * ColumnList(RelOptInfo *baserel);
 static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRowsFunc,
 		BlockNumber *totalPageCount);
-static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows, int targetRowCount,
-		double *totalRowCount, double *totalDeadRowCount);
+static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
+		int targetRowCount, double *totalRowCount, double *totalDeadRowCount);
 
 /**
  * Helper functions
  */
 static void OrcGetNextStripe(OrcFdwExecState* execState);
-static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls, MemoryContext current,
-		MemoryContext orcContext);
-
-static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod);
-static Datum ColumnValueArray(Field* field, Oid valueTypeId, int columnTypeMod, int listSize);
+static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls,
+		MemoryContext current, MemoryContext orcContext);
 
 /* Declarations for dynamic loading */
 PG_MODULE_MAGIC
@@ -211,7 +208,8 @@ static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid for
 	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
 
 	double tupleCount = TupleCount(baserel, options->filename);
-	double rowSelectivity = clauselist_selectivity(root, baserel->baserestrictinfo, 0, JOIN_INNER, NULL);
+	double rowSelectivity = clauselist_selectivity(root, baserel->baserestrictinfo, 0, JOIN_INNER,
+	NULL);
 
 	double outputRowCount = clamp_row_est(tupleCount * rowSelectivity);
 	baserel->rows = outputRowCount;
@@ -245,10 +243,11 @@ static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid forei
 	double totalCost = startupCost + executionCost;
 
 	/* create a foreign path node and add it as the only possible path */
-	foreignScanPath = (Path *) create_foreignscan_path(root, baserel, baserel->rows, startupCost, totalCost,
-	NIL, /* no known ordering */
-	NULL, /* not parameterized */
-	NIL); /* no fdw_private */
+	foreignScanPath = (Path *) create_foreignscan_path(root, baserel, baserel->rows, startupCost,
+			totalCost,
+			NIL, /* no known ordering */
+			NULL, /* not parameterized */
+			NIL); /* no fdw_private */
 
 	add_path(baserel, foreignScanPath);
 }
@@ -259,8 +258,8 @@ static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid forei
  * we need it later for mapping columns.
  */
 static ForeignScan *
-OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId, ForeignPath *bestPath, List *targetList,
-		List *scanClauses)
+OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId, ForeignPath *bestPath,
+		List *targetList, List *scanClauses)
 {
 	ForeignScan *foreignScan = NULL;
 	List *columnList = NULL;
@@ -327,7 +326,8 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 	{
 		stripeInfo = footer->stripes[execState->nextStripeNumber];
 
-		stripeFooter = StripeFooterInit(execState->file, stripeInfo, &execState->compressionParameters);
+		stripeFooter = StripeFooterInit(execState->file, stripeInfo,
+				&execState->compressionParameters);
 
 		/* switch to orc context for reading data */
 		MemoryContextSwitchTo(execState->orcContext);
@@ -438,7 +438,8 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	execState->stripeFooter = NULL;
 	execState->currentStripeInfo = NULL;
 
-	postScript = PostScriptInit(execState->file, &postScriptOffset, &execState->compressionParameters);
+	postScript = PostScriptInit(execState->file, &postScriptOffset,
+			&execState->compressionParameters);
 
 	if (postScript == NULL)
 	{
@@ -447,8 +448,8 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 
 	execState->postScript = postScript;
 
-	footer = FileFooterInit(execState->file, postScriptOffset - postScript->footerlength, postScript->footerlength,
-			&execState->compressionParameters);
+	footer = FileFooterInit(execState->file, postScriptOffset - postScript->footerlength,
+			postScript->footerlength, &execState->compressionParameters);
 
 	if (footer == NULL)
 	{
@@ -510,7 +511,8 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 	}
 
-	FillTupleSlot(execState->recordReader, columnValues, columnNulls, oldContext, execState->orcContext);
+	FillTupleSlot(execState->recordReader, columnValues, columnNulls, oldContext,
+			execState->orcContext);
 
 	execState->currentLineNumber++;
 
@@ -712,7 +714,8 @@ ColumnList(RelOptInfo *baserel)
 		List *clauseColumnList = NIL;
 
 		/* recursively pull up any columns used in the restriction clause */
-		clauseColumnList = pull_var_clause(restrictClause, PVC_RECURSE_AGGREGATES, PVC_RECURSE_PLACEHOLDERS);
+		clauseColumnList = pull_var_clause(restrictClause, PVC_RECURSE_AGGREGATES,
+				PVC_RECURSE_PLACEHOLDERS);
 
 		neededColumnList = list_union(neededColumnList, clauseColumnList);
 	}
@@ -743,16 +746,12 @@ ColumnList(RelOptInfo *baserel)
 	return columnList;
 }
 
-static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls, MemoryContext current,
-		MemoryContext orcContext)
+static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls,
+		MemoryContext current, MemoryContext orcContext)
 {
 	FieldReader* fieldReader = NULL;
 	StructFieldReader* structFieldReader = NULL;
-	ListFieldReader* listFieldReader = NULL;
 	int columnNo = 0;
-	Field field;
-	int length = 0;
-	int isNull = 0;
 
 	structFieldReader = (StructFieldReader*) recordReader->fieldReader;
 
@@ -765,168 +764,19 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *
 		}
 
 		MemoryContextSwitchTo(orcContext);
-		isNull = FieldReaderRead(fieldReader, &field, &length);
+
+		if (fieldReader->kind == FIELD_TYPE__KIND__LIST)
+		{
+			columnValues[columnNo] = ReadListFieldAsDatum(fieldReader, columnNulls + columnNo);
+		}
+		else
+		{
+			columnValues[columnNo] = ReadPrimitiveFieldAsDatum(fieldReader, columnNulls + columnNo);
+		}
+
 		MemoryContextSwitchTo(current);
-
-		if (isNull == 0)
-		{
-			if (fieldReader->kind == FIELD_TYPE__KIND__LIST)
-			{
-				if (field.isItemNull == NULL || field.list == NULL)
-				{
-					elog(ERROR, "Error reading list element from the field\n");
-				}
-
-				listFieldReader = (ListFieldReader*) fieldReader->fieldReader;
-				columnValues[columnNo] = ColumnValueArray(&field, listFieldReader->itemReader.psqlKind,
-						listFieldReader->itemReader.columnTypeMod, length);
-				columnNulls[columnNo] = false;
-
-				if (field.list)
-					freeMemory(field.list);
-				if (field.isItemNull)
-					freeMemory(field.isItemNull);
-				if (field.listItemSizes)
-					freeMemory(field.listItemSizes);
-			}
-			else
-			{
-				columnValues[columnNo] = ColumnValue(&field.value, fieldReader->psqlKind, fieldReader->columnTypeMod);
-				columnNulls[columnNo] = false;
-			}
-		}
-		else if (isNull == -1)
-		{
-			elog(ERROR, "Error while decoding column data\n");
-		}
 	}
 
-}
-
-/*
- * ColumnValueArray uses array element type id to read the current array pointed
- * to by the jsonArray, and converts each array element with matching type to
- * the corresponding PostgreSQL datum. Then, the function constructs an array
- * datum from element datums, and returns the array datum. This function ignores
- * values that aren't type compatible with valueTypeId.
- */
-static Datum ColumnValueArray(Field* field, Oid valueTypeId, int columnTypeMod, int listSize)
-{
-	Datum columnValueDatum = 0;
-	ArrayType *columnValueObject = NULL;
-	bool typeByValue = false;
-	char typeAlignment = 0;
-	int16 typeLength = 0;
-	uint32 itemIndex = 0;
-	FieldValue* itemFieldValue = field->list;
-	char* isItemNull = field->isItemNull;
-	uint32 datumArraySize = 0;
-
-	/* allocate enough room for datum array's maximum possible size */
-	Datum *datumArray = palloc0(listSize * sizeof(Datum));
-	memset(datumArray, 0, listSize * sizeof(Datum));
-
-	for (itemIndex = 0; itemIndex < listSize; itemIndex++)
-	{
-		if (!isItemNull[itemIndex])
-		{
-			datumArray[itemIndex] = ColumnValue(itemFieldValue, valueTypeId, columnTypeMod);
-		}
-		itemFieldValue++;
-		datumArraySize++;
-	}
-
-	get_typlenbyvalalign(valueTypeId, &typeLength, &typeByValue, &typeAlignment);
-	columnValueObject = construct_array(datumArray, datumArraySize, valueTypeId, typeLength, typeByValue,
-			typeAlignment);
-
-	columnValueDatum = PointerGetDatum(columnValueObject);
-	return columnValueDatum;
-}
-
-/*
- * ColumnValue uses column type information to read the current value pointed to
- * by jsonValue, and converts this value to the corresponding PostgreSQL datum.
- * The function then returns this datum.
- */
-static Datum ColumnValue(FieldValue* fieldValue, int psqlType, int columnTypeMod)
-{
-	Datum columnValue = 0;
-	int64_t deltaTime = 0;
-
-	switch (psqlType)
-	{
-	case INT2OID:
-	{
-		columnValue = Int16GetDatum(fieldValue->value64);
-		break;
-	}
-	case INT4OID:
-	{
-		columnValue = Int32GetDatum(fieldValue->value64);
-		break;
-	}
-	case INT8OID:
-	{
-		columnValue = Int16GetDatum(fieldValue->value64);
-		break;
-	}
-	case FLOAT4OID:
-	case FLOAT8OID:
-	{
-		columnValue = Float8GetDatum(fieldValue->doubleValue);
-		break;
-	}
-	case BOOLOID:
-	{
-		columnValue = BoolGetDatum(fieldValue->value8);
-		break;
-	}
-	case BPCHAROID:
-	{
-		columnValue = DirectFunctionCall3(bpcharin, CStringGetDatum(fieldValue->binary),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(columnTypeMod));
-		break;
-	}
-	case VARCHAROID:
-	{
-		columnValue = DirectFunctionCall3(varcharin, CStringGetDatum(fieldValue->binary),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(columnTypeMod));
-		break;
-	}
-	case TEXTOID:
-	{
-		columnValue = CStringGetTextDatum(fieldValue->binary);
-		break;
-	}
-	case DATEOID:
-	{
-		deltaTime = fieldValue->time.tv_sec - POSTGRESQL_EPOCH_IN_SECONDS;
-		columnValue = DateADTGetDatum(deltaTime / SECONDS_PER_DAY);
-		break;
-	}
-	case TIMESTAMPOID:
-	{
-		/* timestamp is in microseconds */
-		deltaTime = fieldValue->time.tv_sec * MICROSECONDS_PER_SECOND;
-		deltaTime += fieldValue->time.tv_nsec / NANOSECONDS_PER_MICROSECOND;
-		deltaTime -= POSTGRESQL_EPOCH_IN_SECONDS * MICROSECONDS_PER_SECOND;
-		columnValue = TimestampGetDatum(deltaTime);
-		break;
-	}
-	case NUMERICOID:
-	case TIMESTAMPTZOID:
-	default:
-	{
-		ereport(ERROR,
-				(errcode(ERRCODE_FDW_INVALID_DATA_TYPE), errmsg("cannot convert ORC type to column type"), errhint("column type: %u", (uint32) psqlType)));
-		break;
-	}
-	}
-
-	return columnValue;
 }
 
 /*
@@ -944,7 +794,8 @@ static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acq
 	int statResult = stat(options->filename, &statBuffer);
 	if (statResult < 0)
 	{
-		ereport(ERROR, (errcode_for_file_access(), errmsg("could not stat file \"%s\": %m", options->filename)));
+		ereport(ERROR,
+				(errcode_for_file_access(), errmsg("could not stat file \"%s\": %m", options->filename)));
 	}
 
 	/*
@@ -976,8 +827,8 @@ static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acq
  * inaccurate, but that's OK. We currently don't use correlation estimates (the
  * planner only pays attention to correlation for index scans).
  */
-static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows, int targetRowCount,
-		double *totalRowCount, double *totalDeadRowCount)
+static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
+		int targetRowCount, double *totalRowCount, double *totalDeadRowCount)
 {
 	int sampleRowCount = 0;
 	double rowCount = 0.0;
@@ -1076,7 +927,8 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 		 */
 		if (sampleRowCount < targetRowCount)
 		{
-			sampleRows[sampleRowCount++] = heap_form_tuple(tupleDescriptor, columnValues, columnNulls);
+			sampleRows[sampleRowCount++] = heap_form_tuple(tupleDescriptor, columnValues,
+					columnNulls);
 		}
 		else
 		{

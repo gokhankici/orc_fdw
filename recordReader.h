@@ -157,7 +157,11 @@ int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
 int ReadDictionary(FieldReader* fieldReader);
 int FieldReaderFree(FieldReader* reader);
 
-Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader);
+/*
+ * Functions to read the column value directly into the native PSQL format
+ */
+Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull);
+Datum ReadListFieldAsDatum(FieldReader* fieldReader, bool *isNull);
 
 /**
  * Helper functions to get the kth stream and its type

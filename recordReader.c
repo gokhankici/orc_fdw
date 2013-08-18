@@ -1,36 +1,12 @@
 #include "postgres.h"
-#include "access/reloptions.h"
-#include "catalog/pg_foreign_table.h"
+
 #include "catalog/pg_type.h"
-#include "commands/defrem.h"
-#include "commands/explain.h"
-#include "commands/vacuum.h"
-#include "foreign/fdwapi.h"
-#include "foreign/foreign.h"
-#include "miscadmin.h"
-#include "nodes/makefuncs.h"
-#include "optimizer/cost.h"
-#include "optimizer/plancat.h"
-#include "optimizer/pathnode.h"
-#include "optimizer/planmain.h"
-#include "optimizer/restrictinfo.h"
-#include "optimizer/var.h"
-#include "port.h"
-#include "storage/fd.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/date.h"
 #include "utils/datetime.h"
-#include "utils/int8.h"
-#include "utils/timestamp.h"
-#include "utils/hsearch.h"
 #include "utils/lsyscache.h"
-#include "utils/memutils.h"
-#include "utils/rel.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+
 #include "orc.pb-c.h"
 #include "util.h"
 #include "recordReader.h"
@@ -958,7 +934,12 @@ int FieldReaderFree(FieldReader* reader)
 	return 0;
 }
 
-Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
+/*
+ * Reads a primitive field from the reader and returns it as a Datum.
+ *
+ * @param isNull pointer to store whether the field is null or not
+ */
+Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 {
 	Datum columnValue = 0;
 	PrimitiveFieldReader* primitiveReader = (PrimitiveFieldReader*) fieldReader->fieldReader;
@@ -987,10 +968,12 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
 		isPresent = ReadBoolean(presentStreamReader);
 		if (isPresent == 0)
 		{
-			return 1;
+			*isNull = true;
+			return 0;
 		}
 		else if (isPresent < 0)
 		{
+			LogError("Error while reading present bit stream");
 			return -1;
 		}
 	}
@@ -1027,17 +1010,18 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
 		break;
 	}
 	case FLOAT4OID:
-	{
-		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
-		result = ReadFloat(fpStreamReader, &floatData);
-		doubleData = floatData;
-		columnValue = Float8GetDatum(doubleData);
-		break;
-	}
 	case FLOAT8OID:
 	{
 		fpStreamReader = &primitiveReader->readers[DATA_STREAM];
-		result = ReadDouble(fpStreamReader, &doubleData);
+		if (fieldReader->kind == FIELD_TYPE__KIND__FLOAT)
+		{
+			result = ReadFloat(fpStreamReader, &floatData);
+			doubleData = floatData;
+		}
+		else
+		{
+			result = ReadDouble(fpStreamReader, &doubleData);
+		}
 		columnValue = Float8GetDatum(doubleData);
 		break;
 	}
@@ -1063,6 +1047,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
 				result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
 				if (result < 0)
 				{
+					LogError("Error while reading dictionary item length");
 					return -1;
 				}
 
@@ -1074,6 +1059,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
 				primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
 				if (result < 0)
 				{
+					LogError("Error while reading dictionary item");
 					return -1;
 				}
 			}
@@ -1136,6 +1122,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
 		break;
 	}
 	default:
+		result = -1;
 		break;
 	}
 
@@ -1144,5 +1131,75 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader)
 		LogError("Error while reading column");
 	}
 
+	*isNull = false;
+	return columnValue;
+}
+
+/*
+ * Reads a list field from the reader and returns it as a Datum.
+ *
+ * @param isNull pointer to store whether the list is null or not
+ */
+Datum ReadListFieldAsDatum(FieldReader* fieldReader, bool *isNull)
+{
+	Datum columnValue = 0;
+	Datum *datumArray = NULL;
+	int datumArraySize = 0;
+	uint64_t listSize = 0;
+	ArrayType *columnValueObject = NULL;
+	ListFieldReader* listReader = fieldReader->fieldReader;
+	FieldReader* itemReader = &listReader->itemReader;
+	StreamReader* presentStreamReader = &fieldReader->presentBitReader;
+	int result = 0;
+	int iterator = 0;
+	char isPresent = 0;
+	bool isItemNull = 0;
+	bool typeByValue = false;
+	char typeAlignment = 0;
+	int16 typeLength = 0;
+
+	if (fieldReader->hasPresentBitReader && (isPresent = ReadBoolean(presentStreamReader)) == 0)
+	{
+		/* list not present, return null */
+		*isNull = true;
+		return 0;
+	}
+	else if (isPresent == -1)
+	{
+		/* error occured while reading bit, return error code */
+		LogError("Error while reading pressent bit");
+		return -1;
+	}
+
+	result = ReadInteger(fieldReader->kind, &listReader->lengthReader, &listSize);
+	if (result)
+	{
+		/* error while reading the list size */
+		LogError("Error while reading the length of the list");
+		return -1;
+	}
+
+	/* allocate enough room for datum array's maximum possible size */
+	datumArray = palloc0(listSize * sizeof(Datum));
+	memset(datumArray, 0, listSize * sizeof(Datum));
+
+	for (iterator = 0; iterator < listSize; ++iterator)
+	{
+		columnValue = ReadPrimitiveFieldAsDatum(itemReader, &isItemNull);
+		if (isItemNull)
+		{
+			/* TODO currently null values in the list are skipped, is this OK? */
+			continue;
+		}
+		datumArray[datumArraySize] = columnValue;
+		datumArraySize++;
+	}
+
+	get_typlenbyvalalign(itemReader->psqlKind, &typeLength, &typeByValue, &typeAlignment);
+	columnValueObject = construct_array(datumArray, datumArraySize, itemReader->psqlKind,
+			typeLength, typeByValue, typeAlignment);
+	columnValue = PointerGetDatum(columnValueObject);
+
+	*isNull = false;
 	return columnValue;
 }

@@ -307,10 +307,13 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 			listItemReader->orcColumnNo = type->subtypes[0];
 			listItemReader->kind = types[listItemReader->orcColumnNo]->kind;
 
-			typesMatch = MatchOrcWithPSQL(listItemReader->kind, listItemReader->psqlKind);
-			if (arrayItemPSQLKind == InvalidOid || !typesMatch)
+			if (field->required)
 			{
-				LogError("ORC and PSQL types do not match");
+				typesMatch = MatchOrcWithPSQL(listItemReader->kind, listItemReader->psqlKind);
+				if (arrayItemPSQLKind == InvalidOid || !typesMatch)
+				{
+					LogError("ORC and PSQL types do not match");
+				}
 			}
 
 			if (IsComplexType(listItemReader->kind))
@@ -338,10 +341,13 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 		}
 		else
 		{
-			typesMatch = MatchOrcWithPSQL(field->kind, field->psqlKind);
-			if (arrayItemPSQLKind != InvalidOid || !typesMatch)
+			if (field->required)
 			{
-				LogError("ORC and PSQL types do not match");
+				typesMatch = MatchOrcWithPSQL(field->kind, field->psqlKind);
+				if (arrayItemPSQLKind != InvalidOid || !typesMatch)
+				{
+					LogError("ORC and PSQL types do not match");
+				}
 			}
 
 			field->fieldReader = alloc(sizeof(PrimitiveFieldReader));
