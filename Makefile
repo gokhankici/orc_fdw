@@ -1,7 +1,7 @@
 # contrib/orc_fdw/Makefile
 
 MODULE_big = orc_fdw
-OBJS = orc.pb-c.o recordReader.o util.o fileReader.o snappy.o inputStream.o orc_fdw.o
+OBJS = orc.pb-c.o recordReader.o orcUtil.o fileReader.o snappy.o inputStream.o orc_fdw.o
 SHLIB_LINK = -lz $(shell pkg-config --libs libprotobuf-c)
 
 EXTENSION = orc_fdw

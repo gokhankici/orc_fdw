@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include "orc.pb-c.h"
 #include "recordReader.h"
-#include "util.h"
+#include "orcUtil.h"
 
 typedef struct
 {

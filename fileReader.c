@@ -2,10 +2,10 @@
 #include "catalog/pg_type.h"
 
 #include "orc.pb-c.h"
+#include "orcUtil.h"
 #include "fileReader.h"
 #include "recordReader.h"
 #include "inputStream.h"
-#include "util.h"
 #include "storage/fd.h"
 
 static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
@@ -219,7 +219,7 @@ static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType)
 		break;
 	case DATEOID:
 	case TIMESTAMPOID:
-		matches = orcType = FIELD_TYPE__KIND__TIMESTAMP;
+		matches = orcType == FIELD_TYPE__KIND__TIMESTAMP;
 		break;
 	case NUMERICOID:
 	case TIMESTAMPTZOID:
@@ -312,7 +312,9 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 				typesMatch = MatchOrcWithPSQL(listItemReader->kind, listItemReader->psqlKind);
 				if (arrayItemPSQLKind == InvalidOid || !typesMatch)
 				{
-					LogError("ORC and PSQL types do not match");
+					LogError3(
+							"Error while reading column %d: ORC and PSQL types do not match, ORC type is %s[]",
+							field->orcColumnNo, getTypeKindName(listItemReader->kind));
 				}
 			}
 
@@ -346,7 +348,9 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 				typesMatch = MatchOrcWithPSQL(field->kind, field->psqlKind);
 				if (arrayItemPSQLKind != InvalidOid || !typesMatch)
 				{
-					LogError("ORC and PSQL types do not match");
+					LogError3(
+							"Error while reading column %d: ORC and PSQL types do not match, ORC type is %s",
+							field->orcColumnNo, getTypeKindName(field->kind));
 				}
 			}
 

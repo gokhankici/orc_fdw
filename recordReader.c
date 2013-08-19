@@ -8,7 +8,7 @@
 #include "utils/lsyscache.h"
 
 #include "orc.pb-c.h"
-#include "util.h"
+#include "orcUtil.h"
 #include "recordReader.h"
 
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
@@ -1103,11 +1103,14 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		result = ReadInteger(FIELD_TYPE__KIND__LONG, integerStreamReader, &udata64);
 		seconds = ToSignedInteger(udata64);
 		seconds += ORC_DIFF_POSTGRESQL;
+//		seconds += ORC_EPOCH_IN_SECONDS;
+//		seconds -= POSTGRESQL_EPOCH_IN_SECONDS;
 
 		if (fieldReader->psqlKind == DATEOID)
 		{
 			/* if this is a date type, don't read nsec stream at all */
-			columnValue = DateADTGetDatum(seconds / SECONDS_PER_DAY);
+			/* TODO PostgreSQL adds one day, why ? */
+			columnValue = DateADTGetDatum(seconds / SECONDS_PER_DAY - 1);
 		}
 		else
 		{
@@ -1120,6 +1123,10 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 					newNanos / NANOSECONDS_PER_MICROSECOND);
 		}
 		break;
+	}
+	case NUMERICOID:
+	{
+
 	}
 	default:
 		result = -1;

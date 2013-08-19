@@ -1,12 +1,12 @@
 /*
- * util.h
+ * orcUtil.h
  *
  *  Created on: Aug 7, 2013
  *      Author: gokhan
  */
 
-#ifndef UTIL_H_
-#define UTIL_H_
+#ifndef ORC_UTIL_H_
+#define ORC_UTIL_H_
 
 #include "postgres.h"
 #include "storage/fd.h"
@@ -18,9 +18,9 @@
 //#define LogError2(x,y) fprintf(stderr, x,y)
 //#define LogError3(x,y,z) fprintf(stderr, x,y,z)
 
-#define LogError(x) elog(ERROR, x)
-#define LogError2(x,y) elog(ERROR, x,y)
-#define LogError3(x,y,z) elog(ERROR, x,y,z)
+#define LogError(message) elog(ERROR, message)
+#define LogError2(message,arg1) elog(ERROR, message,arg1)
+#define LogError3(message,arg1,arg2) elog(ERROR,message,arg1,arg2)
 
 #define alloc(memoryPointer) palloc(memoryPointer)
 #define freeMemory(memoryPointer) pfree(memoryPointer)
@@ -41,4 +41,6 @@ int TimespecToStr(char* timespecBuffer, struct timespec *ts);
 
 int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize);
 
-#endif /* UTIL_H_ */
+char* getTypeKindName(FieldType__Kind kind);
+
+#endif /* ORC_UTIL_H_ */

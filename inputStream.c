@@ -8,7 +8,7 @@
 #include <string.h>
 #include <zlib.h>
 #include "inputStream.h"
-#include "util.h"
+#include "orcUtil.h"
 #include "snappy.h"
 
 /**

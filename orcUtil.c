@@ -3,7 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <zlib.h>
-#include "util.h"
+
+#include "orcUtil.h"
 #include "snappy.h"
 
 #define TIMESPEC_BUFFER_LENGTH 30
@@ -161,3 +162,38 @@ void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int lengt
 	}
 }
 
+char* getTypeKindName(FieldType__Kind kind)
+{
+	if (kind == FIELD_TYPE__KIND__BOOLEAN)
+		return "BOOLEAN";
+	else if (kind == FIELD_TYPE__KIND__BYTE)
+		return "BYTE";
+	else if (kind == FIELD_TYPE__KIND__SHORT)
+		return "SHORT";
+	else if (kind == FIELD_TYPE__KIND__INT)
+		return "INT";
+	else if (kind == FIELD_TYPE__KIND__LONG)
+		return "LONG";
+	else if (kind == FIELD_TYPE__KIND__FLOAT)
+		return "FLOAT";
+	else if (kind == FIELD_TYPE__KIND__DOUBLE)
+		return "DOUBLE";
+	else if (kind == FIELD_TYPE__KIND__STRING)
+		return "STRING";
+	else if (kind == FIELD_TYPE__KIND__BINARY)
+		return "BINARY";
+	else if (kind == FIELD_TYPE__KIND__TIMESTAMP)
+		return "TIMESTAMP";
+	else if (kind == FIELD_TYPE__KIND__LIST)
+		return "LIST";
+	else if (kind == FIELD_TYPE__KIND__MAP)
+		return "MAP";
+	else if (kind == FIELD_TYPE__KIND__STRUCT)
+		return "STRUCT";
+	else if (kind == FIELD_TYPE__KIND__UNION)
+		return "UNION";
+	else if (kind == FIELD_TYPE__KIND__DECIMAL)
+		return "DECIMAL";
+	else
+		return NULL;
+}

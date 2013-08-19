@@ -4,55 +4,18 @@
 #include "orc.pb-c.h"
 #include "fileReader.h"
 #include "recordReader.h"
-#include "util.h"
+#include "orcUtil.h"
 
 /* TODO remove these two later */
 long totalBytesRead = 0;
 long totalUncompressedBytes = 0;
 
-char* getTypeKindName(FieldType__Kind kind);
 void printType(FieldType** types, char* typeName, int typeIndex, int depth);
 void printStatistics(ColumnStatistics* statistics, FieldType* fieldType);
 char* getStreamKindName(Stream__Kind kind);
 char* getEncodingName(ColumnEncoding__Kind kind);
 void printDataInHex(uint8_t* data, int length);
 void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset);
-
-char* getTypeKindName(FieldType__Kind kind)
-{
-	if (kind == FIELD_TYPE__KIND__BOOLEAN)
-		return "BOOLEAN";
-	else if (kind == FIELD_TYPE__KIND__BYTE)
-		return "BYTE";
-	else if (kind == FIELD_TYPE__KIND__SHORT)
-		return "SHORT";
-	else if (kind == FIELD_TYPE__KIND__INT)
-		return "INT";
-	else if (kind == FIELD_TYPE__KIND__LONG)
-		return "LONG";
-	else if (kind == FIELD_TYPE__KIND__FLOAT)
-		return "FLOAT";
-	else if (kind == FIELD_TYPE__KIND__DOUBLE)
-		return "DOUBLE";
-	else if (kind == FIELD_TYPE__KIND__STRING)
-		return "STRING";
-	else if (kind == FIELD_TYPE__KIND__BINARY)
-		return "BINARY";
-	else if (kind == FIELD_TYPE__KIND__TIMESTAMP)
-		return "TIMESTAMP";
-	else if (kind == FIELD_TYPE__KIND__LIST)
-		return "LIST";
-	else if (kind == FIELD_TYPE__KIND__MAP)
-		return "MAP";
-	else if (kind == FIELD_TYPE__KIND__STRUCT)
-		return "STRUCT";
-	else if (kind == FIELD_TYPE__KIND__UNION)
-		return "UNION";
-	else if (kind == FIELD_TYPE__KIND__DECIMAL)
-		return "DECIMAL";
-	else
-		return NULL;
-}
 
 void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 {

@@ -432,11 +432,16 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 
 	execState = (OrcFdwExecState *) palloc(sizeof(OrcFdwExecState));
 	execState->filename = options->filename;
-	execState->file = AllocateFile(execState->filename, "r");
 	execState->currentLineNumber = 0;
 	execState->nextStripeNumber = 0;
 	execState->stripeFooter = NULL;
 	execState->currentStripeInfo = NULL;
+	execState->file = AllocateFile(execState->filename, "r");
+
+	if (execState->file == NULL)
+	{
+		LogError2("Error opening file %s", execState->filename);
+	}
 
 	postScript = PostScriptInit(execState->file, &postScriptOffset,
 			&execState->compressionParameters);
@@ -460,7 +465,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	ALLOCSET_DEFAULT_MINSIZE,
 	ALLOCSET_DEFAULT_INITSIZE,
 	Max(ALLOCSET_DEFAULT_MAXSIZE, postScript->compressionblocksize * 2));
-	// execState->orcContext = CurrentMemoryContext;
+// execState->orcContext = CurrentMemoryContext;
 
 	execState->footer = footer;
 	execState->recordReader = palloc(sizeof(FieldReader));
