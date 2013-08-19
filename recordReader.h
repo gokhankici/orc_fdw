@@ -34,8 +34,8 @@
 #define ORC_EPOCH_IN_SECONDS			1420063200L
 #define ORC_DIFF_POSTGRESQL				473385600L
 
-#define ToUnsignedInteger(x) (((x) < 0) ? ((uint64_t)(-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
-#define ToSignedInteger(x) (((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2))
+#define ToUnsignedInteger(x) (uint64_t)( ((x) < 0) ? ( ((uint64_t)-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
+#define ToSignedInteger(x)   ( int64_t)( ((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2) )
 
 #define IsComplexType(type) \
 			  (type == FIELD_TYPE__KIND__LIST \

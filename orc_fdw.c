@@ -785,7 +785,7 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *
 }
 
 /*
- * JsonAnalyzeForeignTable sets the total page count and the function pointer
+ * OrcAnalyzeForeignTable sets the total page count and the function pointer
  * used to acquire a random sample of rows from the foreign file.
  */
 static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRowsFunc,

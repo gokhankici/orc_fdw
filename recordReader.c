@@ -381,6 +381,7 @@ static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState, uint6
 	int bytesRead = 0;
 	char step = 0;
 	uint64_t data = 0;
+	int64_t signedData = 0;
 	*result = 0;
 
 	if (intReaderState->noOfLeftItems == 0)
@@ -415,8 +416,7 @@ static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState, uint6
 		case FIELD_TYPE__KIND__SHORT:
 		case FIELD_TYPE__KIND__INT:
 		case FIELD_TYPE__KIND__LONG:
-			intReaderState->data = ToUnsignedInteger(
-					ToSignedInteger(data) + step);
+			intReaderState->data = ToUnsignedInteger(ToSignedInteger(data) + step);
 			break;
 		default:
 			intReaderState->data += step;
@@ -1103,8 +1103,6 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		result = ReadInteger(FIELD_TYPE__KIND__LONG, integerStreamReader, &udata64);
 		seconds = ToSignedInteger(udata64);
 		seconds += ORC_DIFF_POSTGRESQL;
-//		seconds += ORC_EPOCH_IN_SECONDS;
-//		seconds -= POSTGRESQL_EPOCH_IN_SECONDS;
 
 		if (fieldReader->psqlKind == DATEOID)
 		{
@@ -1125,9 +1123,6 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		break;
 	}
 	case NUMERICOID:
-	{
-
-	}
 	default:
 		result = -1;
 		break;

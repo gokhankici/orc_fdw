@@ -12,6 +12,7 @@ out/*
 orc.pb-c.c
 orc.pb-c.h
 out/*
+.deps
 .deps/* # I don't know what this is
 
 # Packages #
