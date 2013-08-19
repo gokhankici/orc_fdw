@@ -80,7 +80,7 @@ options(filename '/home/gokhan/Downloads/tpch_2_13_0/nation.tbl', delimiter '|')
 create foreign table region_file(
     R_REGIONKEY INT8,
     R_NAME CHAR(25),
-    R_COMMENT VARCHAR
+    R_COMMENT VARCHAR(152)
 ) server file_server
 options(filename '/home/gokhan/Downloads/tpch_2_13_0/region.tbl', delimiter '|');
 
@@ -187,7 +187,7 @@ options(filename '/home/gokhan/orc-files/nation_gzip.orc');
 create foreign table region_orc(
     R_REGIONKEY INT8,
     R_NAME CHAR(25),
-    R_COMMENT VARCHAR
+    R_COMMENT VARCHAR(152)
 ) server orc_server
 options(filename '/home/gokhan/orc-files/region_gzip.orc');
 

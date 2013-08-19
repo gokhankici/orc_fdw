@@ -70,7 +70,7 @@ create table nation(
 create table region(
 	R_REGIONKEY INT8,
 	R_NAME CHAR(25),
-	R_COMMENT VARCHAR
+	R_COMMENT VARCHAR(152)
 );
 
 create table lineitem(
