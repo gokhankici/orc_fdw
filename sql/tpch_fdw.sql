@@ -210,3 +210,109 @@ create foreign table lineitem_orc(
     L_COMMENT VARCHAR(44)
 ) server orc_server
 options(filename '/home/gokhan/orc-files/lineitem_gzip.orc');
+
+--- for cfile_fdw ---------------------------------------------------------------
+create extension cfile_fdw;
+create server cfile_server foreign data wrapper cfile_fdw;
+
+drop foreign table if exists part_cfile;
+drop foreign table if exists supplier_cfile;
+drop foreign table if exists partsupp_cfile;
+drop foreign table if exists customer_cfile;
+drop foreign table if exists orders_cfile;
+drop foreign table if exists nation_cfile;
+drop foreign table if exists region_cfile;
+drop foreign table if exists lineitem_cfile;
+
+create foreign table part_cfile(
+    P_PARTKEY INT8,
+    P_NAME VARCHAR(55),
+    P_MFGR CHAR(25),
+    P_BRAND CHAR(10),
+    P_TYPE VARCHAR(25),
+    P_SIZE INTEGER,
+    P_CONTAINER CHAR(10),
+    P_RETAILPRICE FLOAT8,
+    P_COMMENT VARCHAR(23)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/part_gzip.tbl', delimiter '|');
+
+create foreign table supplier_cfile(
+    S_SUPPKEY INT8,
+    S_NAME CHAR(25),
+    S_ADDRESS VARCHAR(40),
+    S_NATIONKEY INT8,
+    S_PHONE CHAR(15),
+    S_ACCTBAL FLOAT8,
+    S_COMMENT VARCHAR(101)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/supplier_gzip.tbl', delimiter '|');
+
+create foreign table partsupp_cfile(
+    PS_PARTKEY INT8,
+    PS_SUPPKEY INT8,
+    PS_AVAILQTY INTEGER,
+    PS_SUPPLYCOST FLOAT8,
+    PS_COMMENT VARCHAR(199)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/partsupp_gzip.tbl', delimiter '|');
+
+create foreign table customer_cfile(
+    C_CUSTKEY INT8,
+    C_NAME VARCHAR(25),
+    C_ADDRESS VARCHAR(40),
+    C_NATIONKEY INT8,
+    C_PHONE CHAR(15),
+    C_ACCTBAL FLOAT8,
+    C_MKTSEGMENT CHAR(10),
+    C_COMMENT VARCHAR(117)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/customer_gzip.tbl', delimiter '|');
+
+create foreign table orders_cfile(
+    O_ORDERKEY INT8,
+    O_CUSTKEY INT8,
+    O_ORDERSTATUS CHAR(1),
+    O_TOTALPRICE FLOAT8,
+    O_ORDERDATE DATE,
+    O_ORDERPRIORITY CHAR(15),
+    O_CLERK CHAR(15),
+    O_SHIPPRIORITY INTEGER,
+    O_COMMENT VARCHAR(79)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/orders_gzip.tbl', delimiter '|');
+
+create foreign table nation_cfile(
+    N_NATIONKEY INT8,
+    N_NAME CHAR(25),
+    N_REGIONKEY INT8,
+    N_COMMENT VARCHAR(152)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/nation_gzip.tbl', delimiter '|');
+
+create foreign table region_cfile(
+    R_REGIONKEY INT8,
+    R_NAME CHAR(25),
+    R_COMMENT VARCHAR(152)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/region_gzip.tbl', delimiter '|');
+
+create foreign table lineitem_cfile(
+    L_ORDERKEY INT8,
+    L_PARTKEY INT8,
+    L_SUPPKEY INT8,
+    L_LINENUMBER INT,
+    L_QUANTITY FLOAT8,
+    L_EXTENDEDPRICE FLOAT8,
+    L_DISCOUNT FLOAT8,
+    L_TAX FLOAT8,
+    L_RETURNFLAG CHAR(1),
+    L_LINESTATUS CHAR(1),
+    L_SHIPDATE DATE,
+    L_COMMITDATE DATE,
+    L_RECEIPTDATE DATE,
+    L_SHIPINSTRUCT CHAR(25),
+    L_SHIPMODE CHAR(10),
+    L_COMMENT VARCHAR(44)
+) server cfile_server
+options(filename '/home/gokhan/Downloads/tpch_2_13_0/compressed/lineitem_gzip.tbl', delimiter '|');
