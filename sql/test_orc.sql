@@ -1,25 +1,7 @@
--- run the queries 3 times to make the benchmark ready
-
--- discard the following 3 runs' output
+--- discard the following outputs
 \o /dev/null 
 
-\ir orc/query1.sql;
-\ir orc/query3.sql;
-\ir orc/query5.sql;
-\ir orc/query6.sql;
-\ir orc/query10.sql;
-\ir orc/query12.sql;
-\ir orc/query14.sql;
-\ir orc/query19.sql;
-
-\ir orc/query1.sql;
-\ir orc/query3.sql;
-\ir orc/query5.sql;
-\ir orc/query6.sql;
-\ir orc/query10.sql;
-\ir orc/query12.sql;
-\ir orc/query14.sql;
-\ir orc/query19.sql;
+-- run the queries in sequence to warm up the cache
 
 \ir orc/query1.sql;
 \ir orc/query3.sql;

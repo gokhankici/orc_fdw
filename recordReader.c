@@ -175,6 +175,7 @@ static int IntegerReaderInit(FieldType__Kind kind, StreamReader* intState)
 	char type = 0;
 	int bytesRead = 0;
 
+	/* read first byte to determine the encoding */
 	if (FileStreamReadByte(intState->stream, &type))
 	{
 		return -1;
@@ -194,6 +195,7 @@ static int IntegerReaderInit(FieldType__Kind kind, StreamReader* intState)
 		intState->currentEncodingType = RLE;
 		intState->noOfLeftItems = type + 3;
 
+		/* read the step used in the run */
 		if (FileStreamReadByte(intState->stream, &intState->step))
 		{
 			return -1;

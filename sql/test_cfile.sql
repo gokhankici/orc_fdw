@@ -1,29 +1,11 @@
---- run the queries 3 times to make the benchmark ready
-
---- discard the following 3 runs' output
+-- discard the following 3 runs' output
 \o /dev/null 
 
-\ir cfile/query1.sql;
-\ir cfile/query3.sql;
-\ir cfile/query5.sql;
-\ir cfile/query6.sql;
-\ir cfile/query10.sql;
-\ir cfile/query12.sql;
-\ir cfile/query14.sql;
-\ir cfile/query19.sql;
+-- run the queries in sequence to warm up the cache
 
 \ir cfile/query1.sql;
 \ir cfile/query3.sql;
-\ir cfile/query5.sql;
-\ir cfile/query6.sql;
-\ir cfile/query10.sql;
-\ir cfile/query12.sql;
-\ir cfile/query14.sql;
-\ir cfile/query19.sql;
-
-\ir cfile/query1.sql;
-\ir cfile/query3.sql;
-\ir cfile/query5.sql;
+-- \ir cfile/query5.sql;
 \ir cfile/query6.sql;
 \ir cfile/query10.sql;
 \ir cfile/query12.sql;
@@ -38,7 +20,7 @@
 
 \ir cfile/query1.sql;
 \ir cfile/query3.sql;
-\ir cfile/query5.sql;
+-- \ir cfile/query5.sql;
 \ir cfile/query6.sql;
 \ir cfile/query10.sql;
 \ir cfile/query12.sql;
@@ -47,7 +29,7 @@
 
 \ir cfile/query1.sql;
 \ir cfile/query3.sql;
-\ir cfile/query5.sql;
+-- \ir cfile/query5.sql;
 \ir cfile/query6.sql;
 \ir cfile/query10.sql;
 \ir cfile/query12.sql;
@@ -56,7 +38,7 @@
 
 \ir cfile/query1.sql;
 \ir cfile/query3.sql;
-\ir cfile/query5.sql;
+-- \ir cfile/query5.sql;
 \ir cfile/query6.sql;
 \ir cfile/query10.sql;
 \ir cfile/query12.sql;

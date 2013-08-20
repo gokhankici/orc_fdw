@@ -1,25 +1,7 @@
---- run the queries 3 times to make the benchmark ready
-
 --- discard the following 3 runs' output
 \o /dev/null 
 
-\ir file/query1.sql;
-\ir file/query3.sql;
-\ir file/query5.sql;
-\ir file/query6.sql;
-\ir file/query10.sql;
-\ir file/query12.sql;
-\ir file/query14.sql;
-\ir file/query19.sql;
-
-\ir file/query1.sql;
-\ir file/query3.sql;
-\ir file/query5.sql;
-\ir file/query6.sql;
-\ir file/query10.sql;
-\ir file/query12.sql;
-\ir file/query14.sql;
-\ir file/query19.sql;
+-- run the queries in sequence to warm up the cache
 
 \ir file/query1.sql;
 \ir file/query3.sql;
