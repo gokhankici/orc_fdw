@@ -1,3 +1,13 @@
+-- analyze the foreign tables
+analyze customer_orc;
+analyze lineitem_orc;
+analyze nation_orc;
+analyze orders_orc;
+analyze part_orc;
+analyze partsupp_orc;
+analyze region_orc;
+analyze supplier_orc;
+
 --- discard the following outputs
 \o /dev/null 
 

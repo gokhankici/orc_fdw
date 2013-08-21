@@ -1,3 +1,14 @@
+-- analyze the foreign tables
+analyze customer_cfile;
+analyze lineitem_cfile;
+analyze nation_cfile;
+analyze orders_cfile;
+analyze part_cfile;
+analyze partsupp_cfile;
+analyze region_cfile;
+analyze supplier_cfile;
+
+
 -- discard the following 3 runs' output
 \o /dev/null 
 
