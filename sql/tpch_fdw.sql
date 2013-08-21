@@ -129,7 +129,7 @@ create foreign table part_orc(
     P_RETAILPRICE FLOAT8,
     P_COMMENT VARCHAR(23)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/part_gzip.orc');
+options(filename '/home/gokhan/orc-files/part.orc');
 
 create foreign table supplier_orc(
     S_SUPPKEY INT8,
@@ -140,7 +140,7 @@ create foreign table supplier_orc(
     S_ACCTBAL FLOAT8,
     S_COMMENT VARCHAR(101)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/supplier_gzip.orc');
+options(filename '/home/gokhan/orc-files/supplier.orc');
 
 create foreign table partsupp_orc(
     PS_PARTKEY INT8,
@@ -149,7 +149,7 @@ create foreign table partsupp_orc(
     PS_SUPPLYCOST FLOAT8,
     PS_COMMENT VARCHAR(199)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/partsupp_gzip.orc');
+options(filename '/home/gokhan/orc-files/partsupp.orc');
 
 create foreign table customer_orc(
     C_CUSTKEY INT8,
@@ -161,7 +161,7 @@ create foreign table customer_orc(
     C_MKTSEGMENT CHAR(10),
     C_COMMENT VARCHAR(117)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/customer_gzip.orc');
+options(filename '/home/gokhan/orc-files/customer.orc');
 
 create foreign table orders_orc(
     O_ORDERKEY INT8,
@@ -174,7 +174,7 @@ create foreign table orders_orc(
     O_SHIPPRIORITY INTEGER,
     O_COMMENT VARCHAR(79)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/orders_gzip.orc');
+options(filename '/home/gokhan/orc-files/orders.orc');
 
 create foreign table nation_orc(
     N_NATIONKEY INT8,
@@ -182,14 +182,14 @@ create foreign table nation_orc(
     N_REGIONKEY INT8,
     N_COMMENT VARCHAR(152)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/nation_gzip.orc');
+options(filename '/home/gokhan/orc-files/nation.orc');
 
 create foreign table region_orc(
     R_REGIONKEY INT8,
     R_NAME CHAR(25),
     R_COMMENT VARCHAR(152)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/region_gzip.orc');
+options(filename '/home/gokhan/orc-files/region.orc');
 
 create foreign table lineitem_orc(
     L_ORDERKEY INT8,
@@ -209,7 +209,7 @@ create foreign table lineitem_orc(
     L_SHIPMODE CHAR(10),
     L_COMMENT VARCHAR(44)
 ) server orc_server
-options(filename '/home/gokhan/orc-files/lineitem_gzip.orc');
+options(filename '/home/gokhan/orc-files/lineitem.orc');
 
 --- for cfile_fdw ---------------------------------------------------------------
 create extension cfile_fdw;
