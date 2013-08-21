@@ -18,7 +18,7 @@
 #  include <endian.h>
 #endif
 
-#include "postgres.h"
+// #include "postgres.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -74,10 +74,10 @@ static inline u64 put_unaligned64(u64 t, void *p)
 #define put_unaligned64(x,p) put_unaligned(x,p)
 #endif
 
-//#define vmalloc(x) malloc(x)
-//#define vfree(x) free(x)
-#define vmalloc(x) palloc(x)
-#define vfree(x) pfree(x)
+#define vmalloc(x) malloc(x)
+#define vfree(x) free(x)
+// #define vmalloc(x) palloc(x)
+// #define vfree(x) pfree(x)
 
 #define EXPORT_SYMBOL(x)
 

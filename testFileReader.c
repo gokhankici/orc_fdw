@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "fileReader.h"
 #include "recordReader.h"
-#include "util.h"
+#include "orcUtil.h"
 
 int readAllData(FieldReader* fieldReader, int noOfRows);
 int printAllData(FILE* file, FieldReader* structReader, int noOfRows);
@@ -39,6 +39,7 @@ int readAllData(FieldReader* fieldReader, int noOfRows)
 
 	return 0;
 }
+
 int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 {
 	StructFieldReader* structFieldReader = NULL;
@@ -94,6 +95,7 @@ int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 							PrintFieldValue(file, &field.list[0], listItemKind, length);
 						}
 					}
+
 					for (iterator = 1; iterator < listLength; ++iterator)
 					{
 						length = field.listItemSizes ? field.listItemSizes[iterator] : 0;
@@ -127,18 +129,14 @@ int printAllData(FILE* file, FieldReader* fieldReader, int noOfRows)
 		fprintf(file, "\n");
 		fflush(file);
 	}
-
 	return 0;
 }
 
-long totalBytesRead;
-long totalUncompressedBytes;
-
 int main(int argc, char **argv)
 {
-
 	char *orcFileName = NULL;
 	char *outputFileName = NULL;
+	FILE* orcFile = NULL;
 	FILE* outputFile = NULL;
 	FieldReader *fieldReader = NULL;
 	PostScript *postScript = NULL;
@@ -151,8 +149,8 @@ int main(int argc, char **argv)
 	int result = 0;
 	int iterator = 0;
 	int noOfFields = 0;
-	char* selectedFields = 0;
 	int stripeIterator = 0;
+	PostgresQueryInfo *query = NULL;
 
 	if (argc < 2 || argc > 3)
 	{
@@ -160,6 +158,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	orcFileName = argv[1];
+	orcFile = MyOpenFile(orcFileName, "r");
 
 	if (argc == 2)
 	{
@@ -177,7 +176,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	postScript = PostScriptInit(orcFileName, &psOffset, &compressionParameters);
+	postScript = PostScriptInit(orcFile, &psOffset, &compressionParameters);
 	if (postScript == NULL)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
@@ -186,7 +185,7 @@ int main(int argc, char **argv)
 	footerSize = postScript->footerlength;
 
 	/* read the file footer */
-	footer = FileFooterInit(orcFileName, psOffset - footerSize, footerSize, &compressionParameters);
+	footer = FileFooterInit(orcFile, psOffset - footerSize, footerSize, &compressionParameters);
 	if (footer == NULL)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
@@ -194,25 +193,18 @@ int main(int argc, char **argv)
 	}
 
 	noOfFields = footer->types[0]->n_subtypes;
-	selectedFields = alloc(noOfFields);
+
+	query = malloc(sizeof(PostgresQueryInfo));
+	query->selectedColumns = malloc(sizeof(PostgresColumnInfo) * noOfFields);
+	query->noOfSelectedColumns = noOfFields;
 
 	for (iterator = 0; iterator < noOfFields; ++iterator)
 	{
-//		if (iterator == 4 || iterator == 5 || iterator == 6 || iterator == 10)
-//		{
-//
-//			selectedFields[iterator] = 1;
-//		}
-//		else
-//		{
-//			selectedFields[iterator] = 0;
-//		}
-
-		selectedFields[iterator] = 1;
+		query->selectedColumns[iterator].columnIndex = iterator;
 	}
 
 	fieldReader = alloc(sizeof(FieldReader));
-	result = FieldReaderAllocate(fieldReader, footer, selectedFields);
+	result = FieldReaderAllocate(fieldReader, footer, query);
 
 	if (result)
 	{
@@ -220,28 +212,25 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	totalBytesRead = 0;
-	totalUncompressedBytes = 0;
-
 	for (stripeIterator = 0; stripeIterator < footer->n_stripes; stripeIterator++)
 	{
 		stripe = footer->stripes[stripeIterator];
-		stripeFooter = StripeFooterInit(orcFileName, stripe, &compressionParameters);
+		stripeFooter = StripeFooterInit(orcFile, stripe, &compressionParameters);
 		if (stripeFooter == NULL)
 		{
 			fprintf(stderr, "Error while reading stripe footer\n");
 			exit(1);
 		}
 
-		result = FieldReaderInit(fieldReader, orcFileName, stripe, stripeFooter, &compressionParameters);
+		result = FieldReaderInit(fieldReader, orcFile, stripe, stripeFooter, &compressionParameters);
 		if (result)
 		{
 			fprintf(stderr, "Error while reading stripe data\n");
 			exit(1);
 		}
 
-		result = printAllData(outputFile, fieldReader, stripe->numberofrows);
-//		result = readAllData(fieldReader, stripe->numberofrows);
+//		result = printAllData(outputFile, fieldReader, stripe->numberofrows);
+		result = readAllData(fieldReader, stripe->numberofrows);
 		if (result)
 		{
 			fprintf(stderr, "Error while printing values\n");
@@ -254,10 +243,11 @@ int main(int argc, char **argv)
 	FieldReaderFree(fieldReader);
 
 	if (outputFile != stdout)
+	{
 		MyCloseFile(outputFile);
+	}
 
-	printf("Total bytes read from the file: %ld\n", totalBytesRead);
-	printf("Uncompressed size of the read data: %ld\n", totalUncompressedBytes);
+	MyCloseFile(orcFile);
 
 	post_script__free_unpacked(postScript, NULL);
 	footer__free_unpacked(footer, NULL);

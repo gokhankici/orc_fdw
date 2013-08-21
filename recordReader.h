@@ -8,7 +8,7 @@
 #ifndef RECORDREADER_H_
 #define RECORDREADER_H_
 
-#include "postgres.h"
+// #include "postgres.h"
 #include <time.h>
 #include "orc.pb-c.h"
 #include "inputStream.h"
@@ -157,11 +157,11 @@ int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
 int ReadDictionary(FieldReader* fieldReader);
 int FieldReaderFree(FieldReader* reader);
 
-/*
- * Functions to read the column value directly into the native PSQL format
- */
-Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull);
-Datum ReadListFieldAsDatum(FieldReader* fieldReader, bool *isNull);
+// /*
+//  * Functions to read the column value directly into the native PSQL format
+//  */
+// Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull);
+// Datum ReadListFieldAsDatum(FieldReader* fieldReader, bool *isNull);
 
 /**
  * Helper functions to get the kth stream and its type

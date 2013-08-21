@@ -582,7 +582,7 @@ int FileStreamReadByte(FileStream* stream, char* value)
 		return FileBufferReadByte(stream->fileBuffer, value);
 	}
 
-	if (stream->length == 0 || stream->position == stream->length)
+	if (stream->position == stream->length || stream->length == 0)
 	{
 		result = ReadNextCompressedBlock(stream);
 

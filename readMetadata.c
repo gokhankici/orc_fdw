@@ -229,6 +229,7 @@ int main(int argc, const char * argv[])
 	PostScript *postScript = NULL;
 	Footer *footer = NULL;
 	char* orcFileName = NULL;
+	FILE* orcFile = NULL;
 	long psOffset = 0;
 	long footerSize = 0;
 	uint32_t *versionPointer = NULL;
@@ -236,7 +237,7 @@ int main(int argc, const char * argv[])
 	StripeInformation* stripe = NULL;
 	int noOfStripes = 0;
 	int index = 0;
-	Type **types;
+	FieldType **types;
 	int noOfUserMetadataItems = 0;
 	ColumnStatistics* statistics;
 	StripeFooter* stripeFooter;
@@ -249,8 +250,9 @@ int main(int argc, const char * argv[])
 	}
 
 	orcFileName = (char*) argv[1];
+	orcFile = fopen(orcFileName, "r");
 
-	postScript = PostScriptInit(orcFileName, &psOffset, &compressionParameters);
+	postScript = PostScriptInit(orcFile, &psOffset, &compressionParameters);
 	if (postScript == NULL)
 	{
 		fprintf(stderr, "Error while reading postscript\n");
@@ -271,7 +273,7 @@ int main(int argc, const char * argv[])
 	printf("Magic : %s\n", postScript->magic);
 
 	/* read the file footer */
-	footer = FileFooterInit(orcFileName, psOffset - footerSize, footerSize, &compressionParameters);
+	footer = FileFooterInit(orcFile, psOffset - footerSize, footerSize, &compressionParameters);
 	if (footer == NULL)
 	{
 		fprintf(stderr, "Error while reading file footer\n");
@@ -335,7 +337,7 @@ int main(int argc, const char * argv[])
 	for (index = 0; index < noOfStripes; ++index)
 	{
 		stripe = stripes[index];
-		stripeFooter = StripeFooterInit(orcFileName, stripe, &compressionParameters);
+		stripeFooter = StripeFooterInit(orcFile, stripe, &compressionParameters);
 		if (stripeFooter == NULL)
 		{
 			fprintf(stderr, "Error while reading stripe footer\n");

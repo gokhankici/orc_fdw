@@ -14,6 +14,8 @@ orc.pb-c.h
 out/*
 .deps
 .deps/* # I don't know what this is
+readMetadata
+testFileReader
 
 # Packages #
 ############

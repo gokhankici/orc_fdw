@@ -117,50 +117,50 @@ void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int le
 	}
 }
 
-void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int length)
-{
-	char* timespecBuffer = NULL;
-	uint8_t *binaryValues = NULL;
-	int iterator = 0;
+// void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int length)
+// {
+// 	char* timespecBuffer = NULL;
+// 	uint8_t *binaryValues = NULL;
+// 	int iterator = 0;
 
-	switch (kind)
-	{
-	case FIELD_TYPE__KIND__BOOLEAN:
-		elog(WARNING, "%d\n", (int) value->value8);
-		break;
-	case FIELD_TYPE__KIND__BYTE:
-		elog(WARNING,  "%.2X\n", value->value8);
-		break;
-	case FIELD_TYPE__KIND__SHORT:
-	case FIELD_TYPE__KIND__INT:
-	case FIELD_TYPE__KIND__LONG:
-		elog(WARNING, "%ld\n", value->value64);
-		break;
-	case FIELD_TYPE__KIND__FLOAT:
-		elog(WARNING, "%.2f\n", value->floatValue);
-		break;
-	case FIELD_TYPE__KIND__DOUBLE:
-		elog(WARNING, "%.2lf\n", value->doubleValue);
-		break;
-	case FIELD_TYPE__KIND__STRING:
-		elog(WARNING, "%s\n", value->binary);
-		break;
-	case FIELD_TYPE__KIND__TIMESTAMP:
-		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
-		TimespecToStr(timespecBuffer, &value->time);
-		elog(WARNING,  "%s\n", timespecBuffer);
-		break;
-	case FIELD_TYPE__KIND__BINARY:
-		binaryValues = (uint8_t*) value->binary;
-		for (iterator = 0; iterator < length; ++iterator)
-		{
-			elog(WARNING,  "%.2X\n", binaryValues[iterator]);
-		}
-		break;
-	default:
-		break;
-	}
-}
+// 	switch (kind)
+// 	{
+// 	case FIELD_TYPE__KIND__BOOLEAN:
+// 		elog(WARNING, "%d\n", (int) value->value8);
+// 		break;
+// 	case FIELD_TYPE__KIND__BYTE:
+// 		elog(WARNING,  "%.2X\n", value->value8);
+// 		break;
+// 	case FIELD_TYPE__KIND__SHORT:
+// 	case FIELD_TYPE__KIND__INT:
+// 	case FIELD_TYPE__KIND__LONG:
+// 		elog(WARNING, "%ld\n", value->value64);
+// 		break;
+// 	case FIELD_TYPE__KIND__FLOAT:
+// 		elog(WARNING, "%.2f\n", value->floatValue);
+// 		break;
+// 	case FIELD_TYPE__KIND__DOUBLE:
+// 		elog(WARNING, "%.2lf\n", value->doubleValue);
+// 		break;
+// 	case FIELD_TYPE__KIND__STRING:
+// 		elog(WARNING, "%s\n", value->binary);
+// 		break;
+// 	case FIELD_TYPE__KIND__TIMESTAMP:
+// 		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
+// 		TimespecToStr(timespecBuffer, &value->time);
+// 		elog(WARNING,  "%s\n", timespecBuffer);
+// 		break;
+// 	case FIELD_TYPE__KIND__BINARY:
+// 		binaryValues = (uint8_t*) value->binary;
+// 		for (iterator = 0; iterator < length; ++iterator)
+// 		{
+// 			elog(WARNING,  "%.2X\n", binaryValues[iterator]);
+// 		}
+// 		break;
+// 	default:
+// 		break;
+// 	}
+// }
 
 char* getTypeKindName(FieldType__Kind kind)
 {

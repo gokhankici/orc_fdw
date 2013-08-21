@@ -1,25 +1,35 @@
-# contrib/orc_fdw/Makefile
+CC			 =	gcc
+LIBS		+= 	`pkg-config --libs libprotobuf-c zlib`
+INCLUDES	+= 	`pkg-config --cflags libprotobuf-c zlib`
+CFLAGS		 = 	-Wall -g -pg -Wmissing-prototypes -Wpointer-arith \
+				-Wdeclaration-after-statement -Wendif-labels -Wmissing-format-attribute \
+				-Wformat-security -fno-strict-aliasing -fwrapv -fexcess-precision=standard
+#not added flags -g -pg
 
-MODULE_big = orc_fdw
-OBJS = orc.pb-c.o recordReader.o orcUtil.o fileReader.o snappy.o inputStream.o orc_fdw.o
-SHLIB_LINK = -lz $(shell pkg-config --libs libprotobuf-c)
+READMETADATA_OBJECTS	= orc.pb-c.o snappy.o orcUtil.o fileReader.o recordReader.o readMetadata.o inputStream.o
+TESTFILEREADER_OBJECTS	= orc.pb-c.o testFileReader.o recordReader.o orcUtil.o fileReader.o snappy.o inputStream.o 
+EXECUTABLES				= readMetadata testFileReader
 
-EXTENSION = orc_fdw
-DATA = orc_fdw--1.0.sql
+all:			orc $(EXECUTABLES) 
 
-REGRESS = orc_fdw
+orc: 			orc.pb-c.c
 
-EXTRA_CLEAN = sql/orc_fdw.sql expected/orc_fdw.out
+orc.pb-c.c:	
+				protoc-c --c_out=. orc.proto
 
-ifdef USE_PGXS
-PG_CONFIG = pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-include $(PGXS)
-else
-subdir = contrib/orc_fdw
-top_builddir = ../..
-include $(top_builddir)/src/Makefile.global
-# Removes optimization flag for debugging
-# CFLAGS:=$(filter-out -O2,$(CFLAGS))
-include $(top_srcdir)/contrib/contrib-global.mk
-endif
+.SUFFIXES: 		.c .o
+
+.c.o:	
+				$(CC) $(CFLAGS) $(INCLUDES) -c $<
+
+.o:		
+				$(CC) $(CFLAGS) $^ -o $@ $(LIBS)
+
+readMetadata:	$(READMETADATA_OBJECTS)
+
+testFileReader:	$(TESTFILEREADER_OBJECTS)
+
+.PHONY:			clean
+
+clean:	
+				rm -f *.o gmon.out $(EXECUTABLES)
