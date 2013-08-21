@@ -1,3 +1,5 @@
+\timing
+
 SELECT
     n_name,
     sum(l_extendedprice * (1 - l_discount)) as revenue
@@ -22,3 +24,5 @@ GROUP BY
     n_name
 ORDER BY
     revenue desc;
+
+\timing

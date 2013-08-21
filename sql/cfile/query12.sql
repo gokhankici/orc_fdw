@@ -1,3 +1,5 @@
+\timing
+
 SELECT
     l_shipmode,
     sum(case
@@ -26,3 +28,5 @@ GROUP BY
     l_shipmode
 ORDER BY
     l_shipmode;
+
+\timing

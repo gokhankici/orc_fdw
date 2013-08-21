@@ -14,6 +14,10 @@ analyze supplier_cfile;
 
 -- run the queries in sequence to warm up the cache
 
+-- each query enables and disables timing 
+-- enable it here to disable their timings
+\timing
+
 \ir cfile/query1.sql;
 \ir cfile/query3.sql;
 -- \ir cfile/query5.sql;
@@ -22,13 +26,13 @@ analyze supplier_cfile;
 \ir cfile/query12.sql;
 \ir cfile/query14.sql;
 \ir cfile/query19.sql;
+
+-- disable timing to enable following ones
+\timing
 
 -- redirect output to the given cfile
 \o /home/gokhan/cfile_benchmark 
 
--- enable timing for the upcoming benchmarks
-\timing 
-
 \ir cfile/query1.sql;
 \ir cfile/query3.sql;
 -- \ir cfile/query5.sql;
@@ -55,9 +59,6 @@ analyze supplier_cfile;
 \ir cfile/query12.sql;
 \ir cfile/query14.sql;
 \ir cfile/query19.sql;
-
--- disable timing
-\timing 
 
 -- make the outputs appear on console again
 \o 

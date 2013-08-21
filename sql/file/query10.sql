@@ -1,3 +1,5 @@
+\timing
+
 SELECT
     c_custkey,
     c_name,
@@ -30,3 +32,5 @@ GROUP BY
 ORDER BY
     revenue desc
 LIMIT 20;
+
+\timing

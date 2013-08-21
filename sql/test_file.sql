@@ -14,6 +14,10 @@ analyze supplier_file;
 
 -- run the queries in sequence to warm up the cache
 
+-- each query enables and disables timing 
+-- enable it here to disable their timings
+\timing
+
 \ir file/query1.sql;
 \ir file/query3.sql;
 \ir file/query5.sql;
@@ -22,13 +26,13 @@ analyze supplier_file;
 \ir file/query12.sql;
 \ir file/query14.sql;
 \ir file/query19.sql;
+
+-- disable timing to enable following ones
+\timing
 
 -- redirect output to the given file
 \o /home/gokhan/file_benchmark 
 
--- enable timing for the upcoming benchmarks
-\timing 
-
 \ir file/query1.sql;
 \ir file/query3.sql;
 \ir file/query5.sql;
@@ -55,9 +59,6 @@ analyze supplier_file;
 \ir file/query12.sql;
 \ir file/query14.sql;
 \ir file/query19.sql;
-
--- disable timing
-\timing 
 
 -- make the outputs appear on console again
 \o 

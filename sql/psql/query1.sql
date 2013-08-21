@@ -1,3 +1,5 @@
+\timing
+
 SELECT
     l_returnflag,
     l_linestatus,
@@ -19,3 +21,5 @@ GROUP BY
 ORDER BY
     l_returnflag,
     l_linestatus;
+
+\timing

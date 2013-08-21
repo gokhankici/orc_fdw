@@ -3,6 +3,10 @@
 
 -- run the queries in sequence to warm up the cache
 
+-- each query enables and disables timing 
+-- enable it here to disable their timings
+\timing
+
 \ir psql/query1.sql;
 \ir psql/query3.sql;
 \ir psql/query5.sql;
@@ -12,12 +16,12 @@
 \ir psql/query14.sql;
 \ir psql/query19.sql;
 
--- redirect output to the given file
+-- disable timing to enable following ones
+\timing
+
+-- redirect output to the agiven file
 \o /home/gokhan/psql_benchmark 
 
--- enable timing for the upcoming benchmarks
-\timing 
-
 \ir psql/query1.sql;
 \ir psql/query3.sql;
 \ir psql/query5.sql;
@@ -44,9 +48,6 @@
 \ir psql/query12.sql;
 \ir psql/query14.sql;
 \ir psql/query19.sql;
-
--- disable timing
-\timing 
 
 -- make the outputs appear on console again
 \o 

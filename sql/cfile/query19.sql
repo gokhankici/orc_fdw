@@ -1,3 +1,5 @@
+\timing
+
 SELECT
     sum(l_extendedprice* (1 - l_discount)) as revenue
 FROM
@@ -33,3 +35,5 @@ WHERE
         AND l_shipmode in ('AIR', 'AIR REG')
         AND l_shipinstruct = 'DELIVER IN PERSON'
     );
+
+\timing
