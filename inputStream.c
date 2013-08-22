@@ -98,7 +98,7 @@ static int FileBufferFill(FileBuffer* fileBuffer)
 		return -1;
 	}
 
-	if (fileBuffer->offset == fileBuffer->limit)
+	if (fileBuffer->offset >= fileBuffer->limit)
 	{
 		/* already reached end of file stream */
 		return 0;
@@ -114,7 +114,7 @@ static int FileBufferFill(FileBuffer* fileBuffer)
 	}
 
 	bytesRead =
-	min(fileBuffer->limit - fileBuffer->offset, fileBuffer->bufferSize - fileBuffer->length);
+	Min(fileBuffer->limit - fileBuffer->offset, fileBuffer->bufferSize - fileBuffer->length);
 
 	if (bytesRead < 0)
 	{
@@ -272,6 +272,24 @@ static int FileBufferReadRemaining(FileBuffer* fileBuffer, char** data, int* dat
 	return 0;
 }
 
+/* skip to the absolute offset given as the parameter */
+static void FileBufferSkip(FileBuffer* fileBuffer, long offset)
+{
+	if (fileBuffer->offset - fileBuffer->length <= offset && fileBuffer->offset > offset)
+	{
+		/* if offset is reachable just change the position */
+		fileBuffer->position = fileBuffer->length - (fileBuffer->offset - offset);
+	}
+	else
+	{
+		/* else we have to read block which starts at offset*/
+		fileBuffer->offset = offset;
+		fileBuffer->position = 0;
+		fileBuffer->length = 0;
+		FileBufferFill(fileBuffer);
+	}
+}
+
 /**
  * Initialize a CompressedFileStream.
  *
@@ -313,6 +331,9 @@ FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize,
 	stream->data = alloc(bufferSize);
 	stream->allocatedMemory = stream->data;
 	stream->isNotCompressed = 0;
+
+	stream->startOffset = offset;
+	stream->currentCompressedBlockOffset = offset;
 
 	/**
 	 *  Just allocate some bytes for this buffer since we may not use it.
@@ -372,6 +393,12 @@ static int ReadNextCompressedBlock(FileStream* stream)
 	int chunkLength = 0;
 	int result = 0;
 	size_t snappyUncompressedSize = 0;
+
+	/*
+	 * Since fileBuffer->offset gives the offset of the next byte to read,
+	 * now it points to the next compressed block.
+	 */
+	stream->currentCompressedBlockOffset = stream->fileBuffer->offset;
 
 	header = FileBufferRead(stream->fileBuffer, &headerLength);
 
@@ -554,8 +581,7 @@ char* FileStreamRead(FileStream* stream, int *length)
 			return NULL;
 		}
 
-		memcpy(stream->tempBuffer + unreadByteSize, stream->data,
-				requestedLength - unreadByteSize);
+		memcpy(stream->tempBuffer + unreadByteSize, stream->data, requestedLength - unreadByteSize);
 		stream->position += requestedLength - unreadByteSize;
 
 		data = stream->tempBuffer;
@@ -689,4 +715,37 @@ int FileStreamEOF(FileStream* fileStream)
 {
 	return fileStream->position == fileStream->length
 			&& FileBufferBytesLeft(fileStream->fileBuffer) == 0;
+}
+
+/*
+ * Skip to the given offset in the file stream
+ *
+ * @param stream file stream to skip
+ * @param fileOffset offset after the start of the data stream in the file
+ * @param blockOffset offset of the data in the block
+ */
+void FileStreamSkip(FileStream* stream, long fileOffset, long blockOffset)
+{
+	/* file offsets are the offsets starting from the data stream */
+	fileOffset += stream->startOffset;
+
+	if (fileOffset != stream->currentCompressedBlockOffset)
+	{
+		/* skip to the (un)compressed block at the file */
+		FileBufferSkip(stream->fileBuffer, fileOffset);
+	}
+
+	if (stream->compressionKind != COMPRESSION_KIND__NONE)
+	{
+		/* uncompress the next block */
+		ReadNextCompressedBlock(stream);
+
+		if (stream->length >= blockOffset)
+		{
+			LogError("Not enough bytes to skip in the uncompressed stream");
+		}
+
+		/* if compressed, position the next byte to the given offset */
+		stream->position = blockOffset;
+	}
 }

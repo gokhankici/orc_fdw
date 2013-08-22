@@ -9,7 +9,6 @@
 #define RECORDREADER_H_
 
 #include "postgres.h"
-#include <time.h>
 #include "orc.pb-c.h"
 #include "inputStream.h"
 
@@ -148,6 +147,7 @@ typedef struct
 int StreamReaderFree(StreamReader* streamReader);
 int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file,
 		long offset, long limit, CompressionParameters* parameters);
+int StreamReaderSkip(StreamReader* streamReader, int noOfElements);
 
 /**
  * Reads one element from the type.

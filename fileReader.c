@@ -378,15 +378,27 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe,
 		StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
+	StructFieldReader structReader = (StructFieldReader*) fieldReader->fieldReader;
+	FieldReader* subField = NULL;
+	Stream* stream = NULL;
 	long currentDataOffset = 0;
 	int streamNo = 0;
-	Stream* stream = NULL;
 
 	currentDataOffset = stripe->offset + stripe->indexlength;
 	stream = stripeFooter->streams[streamNo];
 
+	if (stream->kind == STREAM__KIND__ROW_INDEX)
+	{
+		/* first index stream is for the struct field, skip it */
+		streamNo++;
+		stream = stripeFooter->streams[streamNo];
+	}
+
 	while (streamNo < stripeFooter->n_streams && stream->kind == STREAM__KIND__ROW_INDEX)
 	{
+		// TODO put the row indices to the field reader ?
+		subField = structReader->fields[streamNo - 1];
+
 		streamNo++;
 		stream = stripeFooter->streams[streamNo];
 	}
@@ -561,9 +573,10 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 				primitiveFieldReader->dictionarySize = 0;
 			}
 		}
-		else if(columnEncoding->kind != COLUMN_ENCODING__KIND__DIRECT)
+		else if (columnEncoding->kind != COLUMN_ENCODING__KIND__DIRECT)
 		{
-			LogError2("Only direct encoding is supported for %s types.", getTypeKindName(fieldReader->kind));
+			LogError2("Only direct encoding is supported for %s types.",
+					getTypeKindName(fieldReader->kind));
 			return -1;
 		}
 

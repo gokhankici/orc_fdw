@@ -465,10 +465,12 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	ALLOCSET_DEFAULT_MINSIZE,
 	ALLOCSET_DEFAULT_INITSIZE,
 	Max(ALLOCSET_DEFAULT_MAXSIZE, postScript->compressionblocksize * 2));
-// execState->orcContext = CurrentMemoryContext;
 
 	execState->footer = footer;
 	execState->recordReader = palloc(sizeof(FieldReader));
+
+	execState->rowIndices = palloc(sizeof(RowIndex*) * footer->types[0]->n_subtypes);
+	memset(execState->rowIndices, 0, sizeof(RowIndex*) * footer->types[0]->n_subtypes);
 
 	OrcInitializeFieldReader(execState, columnList);
 

@@ -56,6 +56,7 @@ typedef struct
 	int length;
 	/* buffer to store uncompressed data */
 	char* data;
+
 	/**
 	 * When stream is very small, it is not compressed. This byte is for providing that information.
 	 * 1 if uncompressed stream is the same as compressed one,
@@ -66,6 +67,12 @@ typedef struct
 	/* this is for reading bytes from cross boundries */
 	char* tempBuffer;
 	int tempBufferSize;
+
+	/* starting offset of the whole data in the file, this is changed when iterated to the next stripe */
+	long startOffset;
+
+	/* Field to store the current compressed block's offset, used when jumping according to indices. */
+	long currentCompressedBlockOffset;
 
 	/*
 	 * Memory is allocated only once for this structure.
@@ -83,6 +90,7 @@ int FileStreamFree(FileStream*);
 char* FileStreamRead(FileStream*, int *length);
 int FileStreamReadByte(FileStream* stream, char* value);
 int FileStreamReadRemaining(FileStream*, char** data, int* dataLength);
+void FileStreamSkip(FileStream* stream, long fileOffset, long blockOffset);
 int FileStreamEOF(FileStream* fileStream);
 
 #endif /* INPUTSTREAM_H_ */

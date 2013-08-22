@@ -76,6 +76,7 @@ typedef struct OrcFdwExecState
 	PostScript *postScript;
 	Footer *footer;
 	StripeFooter *stripeFooter;
+	RowIndex** rowIndices;
 	CompressionParameters compressionParameters;
 	FieldReader* recordReader;
 	MemoryContext orcContext;
