@@ -11,8 +11,9 @@
 #include <stdio.h>
 #include "orc.pb-c.h"
 
-#define DEFAULT_BUFFER_SIZE 262144
-#define DEFAULT_TEMP_BUFFER_SIZE 30
+#define DEFAULT_BUFFER_SIZE			262144
+#define DEFAULT_ROW_INDEX_SIZE		10000
+#define DEFAULT_TEMP_BUFFER_SIZE	30
 
 typedef struct
 {

@@ -270,6 +270,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 		field->kind = type->kind;
 		field->hasPresentBitReader = 0;
 		field->presentBitReader.stream = NULL;
+		field->rowIndex = NULL;
 
 		/* requested columns are sorted according to their index, we can trust its order */
 		if (queryColumnIterator < query->noOfSelectedColumns
@@ -380,9 +381,14 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 {
 	StructFieldReader structReader = (StructFieldReader*) fieldReader->fieldReader;
 	FieldReader* subField = NULL;
+	FileStream* indexStream = NULL;
+	char* indexBuffer = NULL;
+	int indexBufferLength = 0;
 	Stream* stream = NULL;
 	long currentDataOffset = 0;
 	int streamNo = 0;
+	int result = 0;
+	int iterator = 0;
 
 	currentDataOffset = stripe->offset + stripe->indexlength;
 	stream = stripeFooter->streams[streamNo];
@@ -396,12 +402,38 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 
 	while (streamNo < stripeFooter->n_streams && stream->kind == STREAM__KIND__ROW_INDEX)
 	{
-		// TODO put the row indices to the field reader ?
 		subField = structReader->fields[streamNo - 1];
+
+		if (subField->required)
+		{
+			/* if row is required, read its index information */
+			if (subField->rowIndex)
+			{
+				row_index__free_unpacked(subField->rowIndex, NULL);
+				subField->rowIndex = NULL;
+			}
+
+			indexStream = FileStreamInit(file, currentDataOffset,
+					currentDataOffset + stream->length,
+					DEFAULT_ROW_INDEX_SIZE, parameters->compressionKind);
+			FileStreamReadRemaining(indexStream, &indexBuffer, &indexBufferLength);
+
+			subField->rowIndex = row_index__unpack(NULL, indexBufferLength, (uint8_t*) indexBuffer);
+			if (!subField->rowIndex)
+			{
+				LogError("Error while unpacking row index message");
+				return -1;
+			}
+
+			FileStreamFree(indexStream);
+		}
 
 		streamNo++;
 		stream = stripeFooter->streams[streamNo];
 	}
+
+	/* set offset for data reading */
+	currentDataOffset = stripe->offset + stripe->indexlength;
 
 	return FieldReaderInitHelper(fieldReader, file, &currentDataOffset, &streamNo, stripeFooter,
 			parameters);

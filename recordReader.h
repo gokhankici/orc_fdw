@@ -100,6 +100,7 @@ typedef struct
 {
 	StreamReader presentBitReader;
 	FieldType__Kind kind;
+	RowIndex* rowIndex;
 
 	int orcColumnNo;
 
