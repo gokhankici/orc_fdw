@@ -379,7 +379,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe,
 		StripeFooter* stripeFooter, CompressionParameters* parameters)
 {
-	StructFieldReader structReader = (StructFieldReader*) fieldReader->fieldReader;
+	StructFieldReader* structReader = (StructFieldReader*) fieldReader->fieldReader;
 	FieldReader* subField = NULL;
 	FileStream* indexStream = NULL;
 	char* indexBuffer = NULL;
@@ -387,8 +387,6 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 	Stream* stream = NULL;
 	long currentDataOffset = 0;
 	int streamNo = 0;
-	int result = 0;
-	int iterator = 0;
 
 	currentDataOffset = stripe->offset + stripe->indexlength;
 	stream = stripeFooter->streams[streamNo];
@@ -426,6 +424,12 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 			}
 
 			FileStreamFree(indexStream);
+
+			if (subField->kind == FIELD_TYPE__KIND__LIST)
+			{
+				/* if field type is list, stream count for its children */
+				streamNo++;
+			}
 		}
 
 		streamNo++;
