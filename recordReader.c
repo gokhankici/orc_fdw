@@ -383,7 +383,6 @@ static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState, uint6
 	int bytesRead = 0;
 	char step = 0;
 	uint64_t data = 0;
-	int64_t signedData = 0;
 	*result = 0;
 
 	if (intReaderState->noOfLeftItems == 0)

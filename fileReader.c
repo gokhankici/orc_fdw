@@ -527,9 +527,16 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 	{
 		/* these are the supported types, unsupported types are declared above */
 		primitiveFieldReader = fieldReader->fieldReader;
+		columnEncoding = stripeFooter->columns[fieldReader->orcColumnNo];
 
 		if (fieldReader->kind == FIELD_TYPE__KIND__STRING && primitiveFieldReader)
 		{
+			if (columnEncoding->kind != COLUMN_ENCODING__KIND__DICTIONARY)
+			{
+				LogError("Only dictionary encoded strings are supported.");
+				return -1;
+			}
+
 			/* if field's type is string, (re)initialize dictionary */
 			if (primitiveFieldReader->dictionary)
 			{
@@ -545,8 +552,6 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 				primitiveFieldReader->wordLength = NULL;
 			}
 
-			columnEncoding = stripeFooter->columns[fieldReader->orcColumnNo];
-
 			if (fieldReader->required)
 			{
 				primitiveFieldReader->dictionarySize = columnEncoding->dictionarysize;
@@ -555,6 +560,11 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 			{
 				primitiveFieldReader->dictionarySize = 0;
 			}
+		}
+		else if(columnEncoding->kind != COLUMN_ENCODING__KIND__DIRECT)
+		{
+			LogError2("Only direct encoding is supported for %s types.", getTypeKindName(fieldReader->kind));
+			return -1;
 		}
 
 		noOfDataStreams = GetStreamCount(fieldReader->kind);
