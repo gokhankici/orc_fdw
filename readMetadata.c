@@ -15,7 +15,7 @@ void printStatistics(ColumnStatistics* statistics, FieldType* fieldType);
 char* getStreamKindName(Stream__Kind kind);
 char* getEncodingName(ColumnEncoding__Kind kind);
 void printDataInHex(uint8_t* data, int length);
-void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset);
+void printStripeInfo(FILE* orcFile, StripeFooter* stripeFooter, unsigned long offset);
 
 void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 {
@@ -53,7 +53,8 @@ void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 			{
 				printf("    ");
 			}
-			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, getTypeKindName(kind));
+			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName,
+					getTypeKindName(kind));
 
 			/* print the child of the list (which is the type of the list) */
 			printType(types, "element", subTypeIndex + 1, depth + 2);
@@ -64,7 +65,8 @@ void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 			{
 				printf("    ");
 			}
-			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, getTypeKindName(kind));
+			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName,
+					getTypeKindName(kind));
 
 			/* print the key of the map */
 			printType(types, "key", subType->subtypes[0], depth + 2);
@@ -76,11 +78,58 @@ void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 			{
 				printf("    ");
 			}
-			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, getTypeKindName(kind));
+			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName,
+					getTypeKindName(kind));
 			break;
 		}
 	}
 
+}
+
+void printAllStatistics(ColumnStatistics* statistics)
+{
+	IntegerStatistics *intStatistics = NULL;
+	DoubleStatistics *doubleStatistics = NULL;
+	StringStatistics *stringStatistics = NULL;
+	BucketStatistics *bucketStatistics = NULL;
+	DecimalStatistics* decimalStatistics = NULL;
+
+	intStatistics = statistics->intstatistics;
+	if (intStatistics)
+	{
+		printf("    min: %ld | max: %ld | sum: %ld\n", intStatistics->minimum,
+				intStatistics->maximum, intStatistics->sum);
+	}
+
+	doubleStatistics = statistics->doublestatistics;
+	if (doubleStatistics)
+	{
+		printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum,
+				doubleStatistics->maximum, doubleStatistics->sum);
+	}
+
+	stringStatistics = statistics->stringstatistics;
+	if (stringStatistics)
+	{
+		printf("    min: %s | max: %s\n", stringStatistics->minimum, stringStatistics->maximum);
+	}
+
+	bucketStatistics = statistics->bucketstatistics;
+	if (bucketStatistics)
+	{
+		int i;
+		for (i = 0; i < bucketStatistics->n_count; ++i)
+		{
+			printf("    count[%d]: %ld\n", i, bucketStatistics->count[i]);
+		}
+	}
+
+	decimalStatistics = statistics->decimalstatistics;
+	if (decimalStatistics)
+	{
+		printf("    min: %s | max: %s | sum: %s\n", decimalStatistics->minimum,
+				decimalStatistics->maximum, decimalStatistics->sum);
+	}
 }
 
 void printStatistics(ColumnStatistics* statistics, FieldType* fieldType)
@@ -100,8 +149,8 @@ void printStatistics(ColumnStatistics* statistics, FieldType* fieldType)
 		intStatistics = statistics->intstatistics;
 		if (intStatistics)
 		{
-			printf("    min: %ld | max: %ld | sum: %ld\n", intStatistics->minimum, intStatistics->maximum,
-					intStatistics->sum);
+			printf("    min: %ld | max: %ld | sum: %ld\n", intStatistics->minimum,
+					intStatistics->maximum, intStatistics->sum);
 		}
 		break;
 	case FIELD_TYPE__KIND__FLOAT:
@@ -109,8 +158,8 @@ void printStatistics(ColumnStatistics* statistics, FieldType* fieldType)
 		doubleStatistics = statistics->doublestatistics;
 		if (doubleStatistics)
 		{
-			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum, doubleStatistics->maximum,
-					doubleStatistics->sum);
+			printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum,
+					doubleStatistics->maximum, doubleStatistics->sum);
 		}
 		break;
 	case FIELD_TYPE__KIND__STRING:
@@ -135,8 +184,8 @@ void printStatistics(ColumnStatistics* statistics, FieldType* fieldType)
 		decimalStatistics = statistics->decimalstatistics;
 		if (decimalStatistics)
 		{
-			printf("    min: %s | max: %s | sum: %s", decimalStatistics->minimum, decimalStatistics->maximum,
-					decimalStatistics->sum);
+			printf("    min: %s | max: %s | sum: %s", decimalStatistics->minimum,
+					decimalStatistics->maximum, decimalStatistics->sum);
 		}
 		break;
 	default:
@@ -202,12 +251,21 @@ void printDataInHex(uint8_t* data, int length)
 	printf("\n");
 }
 
-void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset)
+void printStripeInfo(FILE* orcFile, StripeFooter* stripeFooter, unsigned long offset)
 {
 	int index = 0;
 	Stream* stream = NULL;
 	ColumnEncoding* columnEncoding = NULL;
 	long streamLength = 0;
+
+	RowIndex *rowIndex = NULL;
+	RowIndexEntry *rowIndexEntry = NULL;
+	FileStream *fileStream = NULL;
+	int indexBufferLength = 0;
+	char* indexBuffer = NULL;
+	int result = 0;
+	int iterator = 0;
+	int posIterator = 0;
 
 	for (index = 0; index < stripeFooter->n_streams; ++index)
 	{
@@ -216,9 +274,45 @@ void printStripeInfo(StripeFooter* stripeFooter, unsigned long offset)
 		streamLength = stream->length;
 
 		printf("Column %-2d | Stream %-2d | Offset: %ld\n", stream->column, index, offset);
-		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind), streamLength);
+		printf("    Stream kind: %-15s | Stream length: %-3ld\n", getStreamKindName(stream->kind),
+				streamLength);
 		printf("    Encoding type: %-13s | Dict. size: %d\n", getEncodingName(columnEncoding->kind),
 				columnEncoding->has_dictionarysize ? columnEncoding->dictionarysize : 0);
+
+		if (stream->kind == STREAM__KIND__ROW_INDEX)
+		{
+			/* print row index info */
+			fileStream = FileStreamInit(orcFile, offset, offset + streamLength, 262144,
+					COMPRESSION_KIND__ZLIB);
+			result = FileStreamReadRemaining(fileStream, &indexBuffer, &indexBufferLength);
+			if (result)
+			{
+				LogError("Error while uncompressing index");
+				exit(1);
+			}
+
+			rowIndex = row_index__unpack(NULL, indexBufferLength, (uint8_t*) indexBuffer);
+			if (!rowIndex)
+			{
+				LogError("Error while unpacking row index message");
+				exit(1);
+			}
+
+			printf("    No of row index entries: %d\n", rowIndex->n_entry);
+			for (iterator = 0; iterator < rowIndex->n_entry; ++iterator)
+			{
+				printf("    Entry %d\n", iterator + 1);
+				rowIndexEntry = rowIndex->entry[iterator];
+				for (posIterator = 0; posIterator < rowIndexEntry->n_positions; ++posIterator)
+				{
+					printf("    %2d/%d %ld\n", posIterator + 1, rowIndexEntry->n_positions,
+							rowIndexEntry->positions[posIterator]);
+				}
+				printAllStatistics(rowIndexEntry->statistics);
+			}
+
+			row_index__free_unpacked(rowIndex, NULL);
+		}
 
 		offset += streamLength;
 	}
@@ -315,7 +409,8 @@ int main(int argc, const char * argv[])
 	for (index = 0; index < noOfUserMetadataItems; ++index)
 	{
 		/* TODO does extraction of metadata value correct? */
-		printf("%s : %s", footer->metadata[index]->name, (char*) footer->metadata[index]->value.data);
+		printf("%s : %s", footer->metadata[index]->name,
+				(char*) footer->metadata[index]->value.data);
 	}
 
 	printf("========================================\n");
@@ -345,7 +440,7 @@ int main(int argc, const char * argv[])
 		}
 
 		printf("== STRIPE %d ==\n", index);
-		printStripeInfo(stripeFooter, stripe->offset);
+		printStripeInfo(orcFile, stripeFooter, stripe->offset);
 	}
 
 	/* Free the unpacked message */
