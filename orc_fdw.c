@@ -47,6 +47,7 @@
 
 #include "orc.pb-c.h"
 #include "fileReader.h"
+#include "orc_query.h"
 
 /* Local functions forward declarations */
 static StringInfo OptionNamesString(Oid currentContextId);
@@ -263,6 +264,7 @@ OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId, Fo
 {
 	ForeignScan *foreignScan = NULL;
 	List *columnList = NULL;
+	List *opExpressionList = NIL;
 	List *foreignPrivateList = NIL;
 
 	/*
@@ -273,13 +275,22 @@ OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId, Fo
 	scanClauses = extract_actual_clauses(scanClauses, false);
 
 	/*
+	 * We construct the query document to have MongoDB filter its rows. We could
+	 * also construct a column name document here to retrieve only the needed
+	 * columns. However, we found this optimization to degrade performance on
+	 * the MongoDB server-side, so we instead filter out columns on our side.
+	 */
+	opExpressionList = ApplicableOpExpressionList(baserel);
+
+	/*
 	 * As an optimization, we only add columns that are present in the query to
 	 * the column mapping hash. To find these columns, we need baserel. We don't
 	 * have access to baserel in executor's callback functions, so we get the
 	 * column list here and put it into foreign scan node's private list.
 	 */
 	columnList = ColumnList(baserel);
-	foreignPrivateList = list_make1(columnList);
+
+	foreignPrivateList = list_make2(columnList,opExpressionList);
 
 	/* create the foreign scan node */
 	foreignScan = make_foreignscan(targetList, scanClauses, baserel->relid,
@@ -360,32 +371,9 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
 {
 	FieldReader *recordReader = execState->recordReader;
 	Footer* footer = execState->footer;
-	ListCell* columnCell = NULL;
-	Var *column = NULL;
-	PostgresQueryInfo query;
-	PostgresColumnInfo* queryColumns = NULL;
-	int iterator = 0;
 	int result = 0;
 
-	/* allocate enough space for info */
-	query.selectedColumns =
-	palloc(sizeof(PostgresColumnInfo) * footer->types[0]->n_subtypes);
-	queryColumns = query.selectedColumns;
-
-	foreach(columnCell, columns)
-	{
-		column = (Var *) lfirst(columnCell);
-		queryColumns[iterator].columnIndex = column->varattno - 1;
-		queryColumns[iterator].columnTypeId = column->vartype;
-		queryColumns[iterator].columnTypeMod = column->vartypmod;
-		queryColumns[iterator].columnArrayTypeId = get_element_type(column->vartype);
-		iterator++;
-	}
-
-	query.noOfSelectedColumns = iterator;
-
-	/* Allocate space for column readers */
-	result = FieldReaderAllocate(recordReader, footer, &query);
+	result = FieldReaderAllocate(recordReader, footer, columns);
 
 	if (result)
 	{
@@ -394,8 +382,6 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
 
 	/* Use next stripe to initialize record reader */
 	OrcGetNextStripe(execState);
-
-	pfree(queryColumns);
 }
 
 /*
@@ -411,7 +397,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	List *foreignPrivateList = NULL;
 	Oid foreignTableId = InvalidOid;
 	OrcFdwOptions *options = NULL;
-	List *columnList = NULL;
+	List *columnList = NIL;
 	PostScript* postScript = NULL;
 	Footer* footer = NULL;
 	long postScriptOffset = 0;
@@ -437,6 +423,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	execState->stripeFooter = NULL;
 	execState->currentStripeInfo = NULL;
 	execState->file = AllocateFile(execState->filename, "r");
+	execState->opExpressionList = (List *) lsecond(foreignPrivateList);
 
 	if (execState->file == NULL)
 	{

@@ -9,6 +9,8 @@
 #define RECORDREADER_H_
 
 #include "postgres.h"
+#include "nodes/primnodes.h"
+
 #include "orc.pb-c.h"
 #include "inputStream.h"
 
@@ -111,9 +113,10 @@ typedef struct
 	/* Actual field reader, can be struct, list, or primitive */
 	void* fieldReader;
 
-	/* psql column information */
-	int psqlKind;
-	int columnTypeMod;
+//	/* psql column information */
+//	int psqlKind;
+//	int columnTypeMod;
+	Var* psqlVariable;
 } FieldReader;
 
 /**

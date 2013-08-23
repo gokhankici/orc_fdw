@@ -9,6 +9,7 @@
 
 #include "orc.pb-c.h"
 #include "orcUtil.h"
+#include "fileReader.h"
 #include "recordReader.h"
 
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
@@ -979,7 +980,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		}
 	}
 
-	switch (fieldReader->psqlKind)
+	switch (OrcGetPSQLType(fieldReader))
 	{
 	case BOOLOID:
 	{
@@ -994,7 +995,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
 		result = ReadInteger(fieldReader->kind, integerStreamReader, &udata64);
 		data64 = ToSignedInteger(udata64);
-		switch (fieldReader->psqlKind)
+		switch (OrcGetPSQLType(fieldReader))
 		{
 		case INT2OID:
 			columnValue = Int16GetDatum(data64);
@@ -1070,20 +1071,20 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		result = ReadInteger(fieldReader->kind, integerStreamReader, &udata64);
 		dictionaryItem = primitiveReader->dictionary[udata64];
 
-		switch (fieldReader->psqlKind)
+		switch (OrcGetPSQLType(fieldReader))
 		{
 		case BPCHAROID:
 		{
 			columnValue = DirectFunctionCall3(bpcharin, CStringGetDatum(dictionaryItem),
 					ObjectIdGetDatum(InvalidOid),
-					Int32GetDatum(fieldReader->columnTypeMod));
+					Int32GetDatum(OrcGetPSQLTypeMod(fieldReader)));
 			break;
 		}
 		case VARCHAROID:
 		{
 			columnValue = DirectFunctionCall3(varcharin, CStringGetDatum(dictionaryItem),
 					ObjectIdGetDatum(InvalidOid),
-					Int32GetDatum(fieldReader->columnTypeMod));
+					Int32GetDatum(OrcGetPSQLTypeMod(fieldReader)));
 			break;
 		}
 		case TEXTOID:
@@ -1105,7 +1106,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		seconds = ToSignedInteger(udata64);
 		seconds += ORC_DIFF_POSTGRESQL;
 
-		if (fieldReader->psqlKind == DATEOID)
+		if (OrcGetPSQLType(fieldReader) == DATEOID)
 		{
 			/* if this is a date type, don't read nsec stream at all */
 			/* TODO PostgreSQL adds one day, why ? */
@@ -1198,8 +1199,8 @@ Datum ReadListFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		datumArraySize++;
 	}
 
-	get_typlenbyvalalign(itemReader->psqlKind, &typeLength, &typeByValue, &typeAlignment);
-	columnValueObject = construct_array(datumArray, datumArraySize, itemReader->psqlKind,
+	get_typlenbyvalalign(OrcGetPSQLType(itemReader), &typeLength, &typeByValue, &typeAlignment);
+	columnValueObject = construct_array(datumArray, datumArraySize, OrcGetPSQLType(itemReader),
 			typeLength, typeByValue, typeAlignment);
 	columnValue = PointerGetDatum(columnValueObject);
 

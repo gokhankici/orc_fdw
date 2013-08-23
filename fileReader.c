@@ -8,8 +8,7 @@
 #include "inputStream.h"
 #include "storage/fd.h"
 
-static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
-		PostgresQueryInfo* query);
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, List* columns);
 static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* currentDataOffset,
 		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters);
 static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType);
@@ -176,7 +175,7 @@ StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo,
  *
  * @return
  */
-int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* query)
+int FieldReaderAllocate(FieldReader* reader, Footer* footer, List* columns)
 {
 	reader->orcColumnNo = 0;
 	reader->hasPresentBitReader = 0;
@@ -186,7 +185,7 @@ int FieldReaderAllocate(FieldReader* reader, Footer* footer, PostgresQueryInfo* 
 	reader->presentBitReader.stream = NULL;
 
 	reader->fieldReader = alloc(sizeof(StructFieldReader));
-	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, query);
+	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, columns);
 }
 
 /*
@@ -239,8 +238,9 @@ static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType)
  *
  * @return 0 for success and -1 for failure
  */
-static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
-		PostgresQueryInfo* query)
+//static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
+//		PostgresQueryInfo* query)
+static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, List* columns)
 {
 	FieldType** types = footer->types;
 	FieldType* root = footer->types[0];
@@ -249,16 +249,18 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 	ListFieldReader* listReader = NULL;
 	FieldReader* field = NULL;
 	FieldReader* listItemReader = NULL;
+	ListCell* listCell = NULL;
+	Var* variable = NULL;
 	int readerIterator = 0;
 	int streamIterator = 0;
-	PostgresColumnInfo* requestedColumns = query->selectedColumns;
-	PostgresColumnInfo* currentColumnInfo = NULL;
 	int queryColumnIterator = 0;
 	int arrayItemPSQLKind = 0;
 	bool typesMatch = false;
 
 	reader->noOfFields = root->n_subtypes;
 	reader->fields = alloc(sizeof(FieldReader*) * reader->noOfFields);
+	listCell = list_head(columns);
+	variable = (Var*) lfirst(listCell);
 
 	for (readerIterator = 0; readerIterator < reader->noOfFields; ++readerIterator)
 	{
@@ -273,23 +275,22 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 		field->rowIndex = NULL;
 
 		/* requested columns are sorted according to their index, we can trust its order */
-		if (queryColumnIterator < query->noOfSelectedColumns
-				&& requestedColumns[queryColumnIterator].columnIndex == readerIterator)
+		if (listCell != NULL && (variable->varattno - 1) == readerIterator)
 		{
 			field->required = 1;
-			currentColumnInfo = &requestedColumns[queryColumnIterator];
-			field->psqlKind = currentColumnInfo->columnTypeId;
+			field->psqlVariable = variable;
 
-			field->columnTypeMod = currentColumnInfo->columnTypeMod;
-			arrayItemPSQLKind = currentColumnInfo->columnArrayTypeId;
+			listCell = lnext(listCell);
+			if (listCell)
+			{
+				variable = (Var*) lfirst(listCell);
+			}
 			queryColumnIterator++;
 		}
 		else
 		{
 			field->required = 0;
-			field->psqlKind = 0;
-			field->columnTypeMod = 0;
-			arrayItemPSQLKind = 0;
+			field->psqlVariable = NULL;
 		}
 
 		if (field->kind == FIELD_TYPE__KIND__LIST)
@@ -302,7 +303,6 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 			/* initialize list item reader */
 			listItemReader = &listReader->itemReader;
 			listItemReader->required = field->required;
-			listItemReader->psqlKind = arrayItemPSQLKind;
 			listItemReader->hasPresentBitReader = 0;
 			listItemReader->presentBitReader.stream = NULL;
 			listItemReader->orcColumnNo = type->subtypes[0];
@@ -310,7 +310,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 
 			if (field->required)
 			{
-				typesMatch = MatchOrcWithPSQL(listItemReader->kind, listItemReader->psqlKind);
+				typesMatch = MatchOrcWithPSQL(listItemReader->kind, OrcGetPSQLType(listItemReader));
 				if (arrayItemPSQLKind == InvalidOid || !typesMatch)
 				{
 					LogError3(
@@ -346,7 +346,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer,
 		{
 			if (field->required)
 			{
-				typesMatch = MatchOrcWithPSQL(field->kind, field->psqlKind);
+				typesMatch = MatchOrcWithPSQL(field->kind, OrcGetPSQLType(field));
 				if (arrayItemPSQLKind != InvalidOid || !typesMatch)
 				{
 					LogError3(
@@ -386,14 +386,17 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 	int indexBufferLength = 0;
 	Stream* stream = NULL;
 	long currentDataOffset = 0;
+	long currentIndexOffset = 0;
 	int streamNo = 0;
 
+	currentIndexOffset = stripe->offset;
 	currentDataOffset = stripe->offset + stripe->indexlength;
 	stream = stripeFooter->streams[streamNo];
 
 	if (stream->kind == STREAM__KIND__ROW_INDEX)
 	{
 		/* first index stream is for the struct field, skip it */
+		currentIndexOffset += stream->length;
 		streamNo++;
 		stream = stripeFooter->streams[streamNo];
 	}
@@ -411,8 +414,8 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 				subField->rowIndex = NULL;
 			}
 
-			indexStream = FileStreamInit(file, currentDataOffset,
-					currentDataOffset + stream->length,
+			indexStream = FileStreamInit(file, currentIndexOffset,
+					currentIndexOffset + stream->length,
 					DEFAULT_ROW_INDEX_SIZE, parameters->compressionKind);
 			FileStreamReadRemaining(indexStream, &indexBuffer, &indexBufferLength);
 
@@ -432,6 +435,7 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 			}
 		}
 
+		currentIndexOffset += stream->length;
 		streamNo++;
 		stream = stripeFooter->streams[streamNo];
 	}

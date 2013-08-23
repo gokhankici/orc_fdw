@@ -1,7 +1,7 @@
 # contrib/orc_fdw/Makefile
 
 MODULE_big = orc_fdw
-OBJS = orc.pb-c.o recordReader.o orcUtil.o fileReader.o snappy.o inputStream.o orc_fdw.o
+OBJS = orc.pb-c.o recordReader.o orcUtil.o fileReader.o snappy.o inputStream.o orc_fdw.o orc_query.o
 SHLIB_LINK = -lz $(shell pkg-config --libs libprotobuf-c)
 
 EXTENSION = orc_fdw
@@ -20,6 +20,6 @@ subdir = contrib/orc_fdw
 top_builddir = ../..
 include $(top_builddir)/src/Makefile.global
 # Removes optimization flag for debugging
-# CFLAGS:=$(filter-out -O2,$(CFLAGS))
+CFLAGS:=$(filter-out -O2,$(CFLAGS))
 include $(top_srcdir)/contrib/contrib-global.mk
 endif

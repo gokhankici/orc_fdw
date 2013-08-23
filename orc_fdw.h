@@ -80,6 +80,7 @@ typedef struct OrcFdwExecState
 	CompressionParameters compressionParameters;
 	FieldReader* recordReader;
 	MemoryContext orcContext;
+	List* opExpressionList;
 
 	uint32 nextStripeNumber;
 	StripeInformation *currentStripeInfo;
