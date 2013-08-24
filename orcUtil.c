@@ -184,6 +184,8 @@ char* getTypeKindName(FieldType__Kind kind)
 		return "BINARY";
 	else if (kind == FIELD_TYPE__KIND__TIMESTAMP)
 		return "TIMESTAMP";
+	else if (kind == FIELD_TYPE__KIND__DATE)
+			return "DATE";
 	else if (kind == FIELD_TYPE__KIND__LIST)
 		return "LIST";
 	else if (kind == FIELD_TYPE__KIND__MAP)

@@ -6,12 +6,15 @@
 #include "recordReader.h"
 #include "orcUtil.h"
 
+#define PRINT_INDEX_INFO 0
+
 /* TODO remove these two later */
 long totalBytesRead = 0;
 long totalUncompressedBytes = 0;
 
 void printType(FieldType** types, char* typeName, int typeIndex, int depth);
 void printStatistics(ColumnStatistics* statistics, FieldType* fieldType);
+void printAllStatistics(ColumnStatistics* statistics);
 char* getStreamKindName(Stream__Kind kind);
 char* getEncodingName(ColumnEncoding__Kind kind);
 void printDataInHex(uint8_t* data, int length);
@@ -93,6 +96,7 @@ void printAllStatistics(ColumnStatistics* statistics)
 	StringStatistics *stringStatistics = NULL;
 	BucketStatistics *bucketStatistics = NULL;
 	DecimalStatistics* decimalStatistics = NULL;
+	DateStatistics* dateStatistics = NULL;
 
 	intStatistics = statistics->intstatistics;
 	if (intStatistics)
@@ -129,6 +133,13 @@ void printAllStatistics(ColumnStatistics* statistics)
 	{
 		printf("    min: %s | max: %s | sum: %s\n", decimalStatistics->minimum,
 				decimalStatistics->maximum, decimalStatistics->sum);
+	}
+
+	dateStatistics = statistics->datestatistics;
+	if (dateStatistics)
+	{
+		printf("    min: %d | max: %d\n", dateStatistics->minimum,
+				dateStatistics->maximum);
 	}
 }
 
@@ -233,12 +244,19 @@ char* getStreamKindName(Stream__Kind kind)
 
 char* getEncodingName(ColumnEncoding__Kind kind)
 {
-	if (kind == COLUMN_ENCODING__KIND__DIRECT)
+	switch (kind)
+	{
+	case COLUMN_ENCODING__KIND__DIRECT:
 		return "DIRECT";
-	else if (kind == COLUMN_ENCODING__KIND__DICTIONARY)
+	case COLUMN_ENCODING__KIND__DIRECT_V2:
+		return "DIRECT_V2";
+	case COLUMN_ENCODING__KIND__DICTIONARY:
 		return "DICTIONARY";
-	else
+	case COLUMN_ENCODING__KIND__DICTIONARY_V2:
+		return "DICTIONARY_V2";
+	default:
 		return "";
+	}
 }
 
 void printDataInHex(uint8_t* data, int length)
@@ -250,6 +268,8 @@ void printDataInHex(uint8_t* data, int length)
 	}
 	printf("\n");
 }
+
+int compressionKind = 0;
 
 void printStripeInfo(FILE* orcFile, StripeFooter* stripeFooter, unsigned long offset)
 {
@@ -279,11 +299,11 @@ void printStripeInfo(FILE* orcFile, StripeFooter* stripeFooter, unsigned long of
 		printf("    Encoding type: %-13s | Dict. size: %d\n", getEncodingName(columnEncoding->kind),
 				columnEncoding->has_dictionarysize ? columnEncoding->dictionarysize : 0);
 
-		if (stream->kind == STREAM__KIND__ROW_INDEX)
+		if (PRINT_INDEX_INFO && stream->kind == STREAM__KIND__ROW_INDEX)
 		{
 			/* print row index info */
 			fileStream = FileStreamInit(orcFile, offset, offset + streamLength, 262144,
-					COMPRESSION_KIND__ZLIB);
+					compressionKind);
 			result = FileStreamReadRemaining(fileStream, &indexBuffer, &indexBufferLength);
 			if (result)
 			{
@@ -298,14 +318,14 @@ void printStripeInfo(FILE* orcFile, StripeFooter* stripeFooter, unsigned long of
 				exit(1);
 			}
 
-			printf("    No of row index entries: %d\n", rowIndex->n_entry);
+			printf("    No of row index entries: %ld\n", rowIndex->n_entry);
 			for (iterator = 0; iterator < rowIndex->n_entry; ++iterator)
 			{
 				printf("    Entry %d\n", iterator + 1);
 				rowIndexEntry = rowIndex->entry[iterator];
 				for (posIterator = 0; posIterator < rowIndexEntry->n_positions; ++posIterator)
 				{
-					printf("    %2d/%d %ld\n", posIterator + 1, rowIndexEntry->n_positions,
+					printf("    %2d/%ld %ld\n", posIterator + 1, rowIndexEntry->n_positions,
 							rowIndexEntry->positions[posIterator]);
 				}
 				printAllStatistics(rowIndexEntry->statistics);
@@ -353,6 +373,7 @@ int main(int argc, const char * argv[])
 		exit(1);
 	}
 	footerSize = postScript->footerlength;
+	compressionKind = postScript->compression;
 
 	/* display the postscript's fields. */
 	footerSize = postScript->footerlength;
@@ -423,7 +444,7 @@ int main(int argc, const char * argv[])
 		if (statistics->has_numberofvalues)
 		{
 			printf("    # values : %ld\n", statistics->numberofvalues);
-			printStatistics(statistics, types[index]);
+			printAllStatistics(statistics);
 		}
 	}
 
