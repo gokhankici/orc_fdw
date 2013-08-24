@@ -1,6 +1,7 @@
 #include "postgres.h"
 #include "orc_fdw.h"
 #include "orc_query.h"
+#include "orcUtil.h"
 
 #include "access/skey.h"
 #include "catalog/pg_am.h"
@@ -20,12 +21,11 @@
 
 static Expr* OrcFindArgumentOfType(List *argumentList, NodeTag argumentType);
 static OrcQueryOperator OrcGetQueryOperator(const char *operatorName);
-static List* BuildRestrictInfoList(List *qualList);
 static Node* BuildBaseConstraint(Var* variable);
 static OpExpr* MakeOpExpression(Var *variable, int16 strategyNumber);
 static Oid GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumber);
 static void UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValue);
-
+static int OrcGetStrideStatistics(Var* variable, RowIndexEntry* entry, Datum* min, Datum* max);
 /*
  * ApplicableOpExpressionList walks over all filter clauses that relate to this
  * foreign table, and chooses applicable clauses that we know we can translate
@@ -159,7 +159,7 @@ static Expr* OrcFindArgumentOfType(List *argumentList, NodeTag argumentType)
  * and then return this list. Note that this function assumes there is only one
  * relation for now.
  */
-static List *
+List *
 BuildRestrictInfoList(List *qualList)
 {
 	List *restrictInfoList = NIL;
@@ -205,6 +205,12 @@ MakeOpExpression(Var *variable, int16 strategyNumber)
 	Oid operatorId = InvalidOid;
 	Const *constantValue = NULL;
 	OpExpr *expression = NULL;
+
+	/* varchar causes problem, change it with text */
+	if (typeId == VARCHAROID)
+	{
+		typeId = TEXTOID;
+	}
 
 	/* Load the operator from system catalogs */
 	operatorId = GetOperatorByType(typeId, accessMethodId, strategyNumber);
@@ -264,4 +270,134 @@ static void UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValu
 
 	minConstant->constbyval = true;
 	maxConstant->constbyval = true;
+}
+
+/*
+ * Creates a restriction list that contains the minimum and maximum values of the
+ * requested columns in the current row stride.
+ *
+ * @param rowReader field reader for the whole column
+ * @param strideNo
+ */
+List*
+OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo)
+{
+	List *strideRestrictions = NIL;
+	StructFieldReader* structReader = (StructFieldReader*) rowReader->fieldReader;
+	FieldReader* subfield = NULL;
+	RowIndex* rowIndex = NULL;
+	RowIndexEntry* rowIndexEntry = NULL;
+	Node* baseRestriction = NULL;
+	Datum minValue = 0;
+	Datum maxValue = 0;
+	int iterator = 0;
+	int hasStatistics = 0;
+
+	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
+	{
+		subfield = structReader->fields[iterator];
+		if (subfield->required)
+		{
+			rowIndex = subfield->rowIndex;
+			if (strideNo > rowIndex->n_entry)
+			{
+				LogError("Row stride does not exist");
+				return NULL;
+			}
+
+			rowIndexEntry = rowIndex->entry[strideNo];
+			baseRestriction = BuildBaseConstraint(subfield->psqlVariable);
+
+			hasStatistics = OrcGetStrideStatistics(subfield->psqlVariable, rowIndexEntry, &minValue,
+					&maxValue);
+
+			if (hasStatistics)
+			{
+				UpdateConstraint(baseRestriction, minValue, maxValue);
+				strideRestrictions = lappend(strideRestrictions, baseRestriction);
+			}
+
+		}
+	}
+
+	return strideRestrictions;
+}
+
+/*
+ * Reads the min/max value from the row index entry into datum pointers
+ *
+ * @return 1 for success, 0 when min/max value cannot be obtained
+ */
+static int OrcGetStrideStatistics(Var* variable, RowIndexEntry* entry, Datum* min, Datum* max)
+{
+	ColumnStatistics* statistics = entry->statistics;
+
+	switch (variable->vartype)
+	{
+	case INT2OID:
+	{
+		*min = Int16GetDatum((short) statistics->intstatistics->minimum);
+		*max = Int16GetDatum((short) statistics->intstatistics->maximum);
+		return 1;
+	}
+	case INT4OID:
+	{
+		*min = Int32GetDatum((int) statistics->intstatistics->minimum);
+		*max = Int32GetDatum((int) statistics->intstatistics->maximum);
+		return 1;
+	}
+	case INT8OID:
+	{
+		*min = Int64GetDatum((int) statistics->intstatistics->minimum);
+		*max = Int64GetDatum((int) statistics->intstatistics->maximum);
+		return 1;
+	}
+	case FLOAT4OID:
+	case FLOAT8OID:
+	{
+		*min = Float8GetDatum((double) statistics->doublestatistics->minimum);
+		*max = Float8GetDatum((double) statistics->doublestatistics->maximum);
+		return 1;
+	}
+	case BPCHAROID:
+	{
+		*min = DirectFunctionCall3(bpcharin, CStringGetDatum(statistics->stringstatistics->minimum),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(variable->vartypmod));
+		*max = DirectFunctionCall3(bpcharin, CStringGetDatum(statistics->stringstatistics->maximum),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(variable->vartypmod));
+		return 1;
+	}
+	case VARCHAROID:
+	{
+		*min =
+		DirectFunctionCall3(varcharin, CStringGetDatum(statistics->stringstatistics->minimum),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(variable->vartypmod));
+		*max =
+		DirectFunctionCall3(varcharin, CStringGetDatum(statistics->stringstatistics->maximum),
+				ObjectIdGetDatum(InvalidOid),
+				Int32GetDatum(variable->vartypmod));
+		return 1;
+	}
+	case TEXTOID:
+	{
+		*min = CStringGetTextDatum(statistics->stringstatistics->minimum);
+		*max = CStringGetTextDatum(statistics->stringstatistics->maximum);
+		return 1;
+	}
+	case DATEOID:
+	{
+		*min = DateADTGetDatum(statistics->datestatistics->minimum - ORC_PSQL_EPOCH_IN_DAYS);
+		*max = DateADTGetDatum(statistics->datestatistics->maximum - ORC_PSQL_EPOCH_IN_DAYS);
+		return 1;
+	}
+	default:
+	{
+		*min = 0;
+		*max = 0;
+		return 0;
+	}
+	}
 }

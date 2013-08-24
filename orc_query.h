@@ -25,5 +25,7 @@ typedef enum
 } OrcQueryOperator;
 
 List* ApplicableOpExpressionList(RelOptInfo *baserel);
+List* OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo);
+List* BuildRestrictInfoList(List *qualList);
 
 #endif /* ORC_QUERY_H_ */

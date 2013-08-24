@@ -19,11 +19,12 @@
 #define SECONDARY_STREAM 		1
 #define DICTIONARY_DATA_STREAM	2
 
-#define MAX_STREAM_COUNT		3
-#define STRING_STREAM_COUNT		3
-#define TIMESTAMP_STREAM_COUNT	2
-#define BINARY_STREAM_COUNT		2
-#define COMMON_STREAM_COUNT		1
+#define MAX_STREAM_COUNT			3
+#define STRING_STREAM_COUNT			3
+#define STRING_DIRECT_STREAM_COUNT	2
+#define TIMESTAMP_STREAM_COUNT		2
+#define BINARY_STREAM_COUNT			2
+#define COMMON_STREAM_COUNT			1
 
 #define MAX_POSTSCRIPT_SIZE		255
 
@@ -34,6 +35,7 @@
 #define POSTGRESQL_EPOCH_IN_SECONDS		946677600L
 #define ORC_EPOCH_IN_SECONDS			1420063200L
 #define ORC_DIFF_POSTGRESQL				473385600L
+#define ORC_PSQL_EPOCH_IN_DAYS			10957
 
 #define ToUnsignedInteger(x) (uint64_t)( ((x) < 0) ? ( ((uint64_t)-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
 #define ToSignedInteger(x)   ( int64_t)( ((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2) )
@@ -128,6 +130,7 @@ typedef struct
 	StreamReader readers[MAX_STREAM_COUNT];
 
 	/* for string type to store the dictionary */
+	char hasDictionary;
 	int dictionarySize;
 	int* wordLength;
 	char** dictionary;
@@ -170,7 +173,7 @@ Datum ReadListFieldAsDatum(FieldReader* fieldReader, bool *isNull);
 /**
  * Helper functions to get the kth stream and its type
  */
-FieldType__Kind GetStreamKind(FieldType__Kind type, int streamIndex);
-int GetStreamCount(FieldType__Kind type);
+FieldType__Kind GetStreamKind(FieldType__Kind type, ColumnEncoding__Kind encoding, int streamIndex);
+int GetStreamCount(FieldType__Kind type, ColumnEncoding__Kind encoding);
 
 #endif /* RECORDREADER_H_ */

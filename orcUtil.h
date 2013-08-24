@@ -14,6 +14,15 @@
 #include "orc.pb-c.h"
 #include "recordReader.h"
 
+typedef struct
+{
+	void* list;
+
+	int elementSize;
+	int length;
+	int position;
+} OrcStack;
+
 //#define LogError(x) fprintf(stderr, x)
 //#define LogError2(x,y) fprintf(stderr, x,y)
 //#define LogError3(x,y,z) fprintf(stderr, x,y,z)
@@ -34,13 +43,13 @@
 #define min(x,y) (((x) < (y)) ? (x) : (y))
 #define max(x,y) (((x) < (y)) ? (y) : (x))
 
-void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int length);
-void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int length);
-
 int TimespecToStr(char* timespecBuffer, struct timespec *ts);
 
 int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize);
 
 char* getTypeKindName(FieldType__Kind kind);
+
+OrcStack* OrcStackInit(void* list, int elementSize, int length);
+void* PopFromStack(OrcStack* stack);
 
 #endif /* ORC_UTIL_H_ */

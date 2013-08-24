@@ -724,28 +724,42 @@ int FileStreamEOF(FileStream* fileStream)
  * @param fileOffset offset after the start of the data stream in the file
  * @param blockOffset offset of the data in the block
  */
-void FileStreamSkip(FileStream* stream, long fileOffset, long blockOffset)
+void FileStreamSkip(FileStream* stream, OrcStack* stack)
 {
-	/* file offsets are the offsets starting from the data stream */
-	fileOffset += stream->startOffset;
+	long *fileOffset = PopFromStack(stack);
+	long *blockOffset = NULL;
+
+	if (fileOffset)
+	{
+		LogError("Not enough position offset to skip");
+	}
 
 	if (fileOffset != stream->currentCompressedBlockOffset)
 	{
-		/* skip to the (un)compressed block at the file */
-		FileBufferSkip(stream->fileBuffer, fileOffset);
+		/* Skip to the (un)compressed block at the file.
+		 * File offsets are the offsets starting from the data stream.
+		 */
+		FileBufferSkip(stream->fileBuffer, *fileOffset + stream->startOffset);
 	}
 
 	if (stream->compressionKind != COMPRESSION_KIND__NONE)
 	{
+		blockOffset = PopFromStack(stack);
+
+		if (blockOffset)
+		{
+			LogError("Not enough position offset to skip");
+		}
+
 		/* uncompress the next block */
 		ReadNextCompressedBlock(stream);
 
-		if (stream->length >= blockOffset)
+		if (stream->length >= *blockOffset)
 		{
 			LogError("Not enough bytes to skip in the uncompressed stream");
 		}
 
 		/* if compressed, position the next byte to the given offset */
-		stream->position = blockOffset;
+		stream->position = *blockOffset;
 	}
 }

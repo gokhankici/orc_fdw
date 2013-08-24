@@ -30,6 +30,7 @@
 #include "optimizer/plancat.h"
 #include "optimizer/pathnode.h"
 #include "optimizer/planmain.h"
+#include "optimizer/predtest.h"
 #include "optimizer/restrictinfo.h"
 #include "optimizer/var.h"
 #include "port.h"
@@ -476,11 +477,16 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	TupleTableSlot *tupleSlot = scanState->ss.ss_ScanTupleSlot;
 	StripeInformation* currentStripe = execState->currentStripeInfo;
 	MemoryContext oldContext = CurrentMemoryContext;
+	Footer* footer = execState->footer;
+	List* strideRestrictions = NIL;
 
 	TupleDesc tupleDescriptor = tupleSlot->tts_tupleDescriptor;
 	Datum *columnValues = tupleSlot->tts_values;
 	bool *columnNulls = tupleSlot->tts_isnull;
 	int columnCount = tupleDescriptor->natts;
+	int currentIndexStride = 0;
+	bool strideSkipped = false;
+	int noOfSkippedStride = 0;
 
 	/* initialize all values for this row to null */
 	memset(columnValues, 0, columnCount * sizeof(Datum));
@@ -505,9 +511,29 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 	}
 
+	if (footer->rowindexstride > 0 && execState->currentLineNumber % footer->rowindexstride == 0)
+	{
+		do
+		{
+			currentIndexStride = (execState->currentLineNumber + noOfSkippedStride * footer->rowindexstride) / footer->rowindexstride;
+			strideRestrictions = OrcCreateStrideRestrictions(execState->recordReader,
+					currentIndexStride);
+			strideSkipped = predicate_refuted_by(strideRestrictions, execState->opExpressionList);
+
+			if (strideSkipped)
+			{
+				noOfSkippedStride++;
+			}
+
+		} while (strideSkipped
+				&& (execState->currentLineNumber + noOfSkippedStride * footer->rowindexstride)
+						< currentStripe->numberofrows);
+
+		elog(WARNING, "# stride skipped: %d", noOfSkippedStride);
+	}
+
 	FillTupleSlot(execState->recordReader, columnValues, columnNulls, oldContext,
 			execState->orcContext);
-
 	execState->currentLineNumber++;
 
 	ExecStoreVirtualTuple(tupleSlot);

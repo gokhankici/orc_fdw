@@ -8,9 +8,9 @@
 #include "utils/lsyscache.h"
 
 #include "orc.pb-c.h"
-#include "orcUtil.h"
-#include "fileReader.h"
 #include "recordReader.h"
+#include "fileReader.h"
+#include "orcUtil.h"
 
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
 static void StructFieldReaderFree(StructFieldReader* reader);
@@ -758,7 +758,7 @@ int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length)
 /**
  * Get the stream type of each data stream of a data type
  */
-FieldType__Kind GetStreamKind(FieldType__Kind type, int streamIndex)
+FieldType__Kind GetStreamKind(FieldType__Kind type, ColumnEncoding__Kind encoding, int streamIndex)
 {
 	switch (type)
 	{
@@ -782,13 +782,44 @@ FieldType__Kind GetStreamKind(FieldType__Kind type, int streamIndex)
 	case FIELD_TYPE__KIND__LONG:
 		return (streamIndex == 0) ? type : -1;
 	case FIELD_TYPE__KIND__STRING:
+		switch (encoding)
+		{
+		case COLUMN_ENCODING__KIND__DICTIONARY:
+		{
+			switch (streamIndex)
+			{
+			case 0:
+			case 1:
+				return FIELD_TYPE__KIND__INT;
+			case 2:
+				return FIELD_TYPE__KIND__BINARY;
+			default:
+				return -1;
+			}
+		}
+		case COLUMN_ENCODING__KIND__DIRECT:
+		{
+			switch (streamIndex)
+			{
+			case 0:
+				return FIELD_TYPE__KIND__BINARY;
+			case 1:
+				return FIELD_TYPE__KIND__INT;
+			default:
+				return -1;
+			}
+		}
+		default:
+		{
+			return -1;
+		}
+		}
+		break;
+	case FIELD_TYPE__KIND__DATE:
 		switch (streamIndex)
 		{
 		case 0:
-		case 1:
 			return FIELD_TYPE__KIND__INT;
-		case 2:
-			return FIELD_TYPE__KIND__BINARY;
 		default:
 			return -1;
 		}
@@ -814,7 +845,7 @@ FieldType__Kind GetStreamKind(FieldType__Kind type, int streamIndex)
 /**
  * Get # data streams of a data type (excluding the present bit stream)
  */
-int GetStreamCount(FieldType__Kind type)
+int GetStreamCount(FieldType__Kind type, ColumnEncoding__Kind encoding)
 {
 	switch (type)
 	{
@@ -827,9 +858,20 @@ int GetStreamCount(FieldType__Kind type)
 	case FIELD_TYPE__KIND__SHORT:
 	case FIELD_TYPE__KIND__INT:
 	case FIELD_TYPE__KIND__LONG:
+	case FIELD_TYPE__KIND__DATE:
 		return COMMON_STREAM_COUNT;
 	case FIELD_TYPE__KIND__STRING:
-		return STRING_STREAM_COUNT;
+	{
+		switch (encoding)
+		{
+		case COLUMN_ENCODING__KIND__DICTIONARY:
+			return STRING_STREAM_COUNT;
+		case COLUMN_ENCODING__KIND__DIRECT:
+			return STRING_DIRECT_STREAM_COUNT;
+		default:
+			return -1;
+		}
+	}
 	case FIELD_TYPE__KIND__TIMESTAMP:
 		return TIMESTAMP_STREAM_COUNT;
 	case FIELD_TYPE__KIND__LIST:
@@ -950,7 +992,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 	StreamReader* booleanStreamReader = NULL;
 	StreamReader* integerStreamReader = NULL;
 	StreamReader* fpStreamReader = NULL;
-	StreamReader* binaryReader = NULL;
+	StreamReader* binaryStreamReader = NULL;
 	StreamReader *nanoSecondsReader = NULL;
 
 	char isPresent = 0;
@@ -961,6 +1003,7 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 	char* dictionaryItem = NULL;
 	int dictionaryIterator = 0;
 	uint64_t wordLength = 0;
+	int days = 0;
 	int64_t seconds = 0;
 	int newNanos = 0;
 	int result = 0;
@@ -1031,45 +1074,78 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 	case VARCHAROID:
 	case TEXTOID:
 	{
-		if (primitiveReader->dictionary == NULL)
+		if (primitiveReader->hasDictionary)
 		{
-			/* if dictionary is NULL, read the whole dictionary to the memory */
-			primitiveReader->dictionary =
-			alloc(sizeof(char*) * primitiveReader->dictionarySize);
-			primitiveReader->wordLength =
-			alloc(sizeof(int) * primitiveReader->dictionarySize);
-
-			integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
-			binaryReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
-
-			/* read the dictionary */
-			for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
-					++dictionaryIterator)
+			/* fill the dictionary if it is empty */
+			if (primitiveReader->dictionary == NULL)
 			{
-				result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
-				if (result < 0)
-				{
-					LogError("Error while reading dictionary item length");
-					return -1;
-				}
+				/* if dictionary is NULL, read the whole dictionary to the memory */
+				primitiveReader->dictionary =
+				alloc(sizeof(char*) * primitiveReader->dictionarySize);
+				primitiveReader->wordLength =
+				alloc(sizeof(int) * primitiveReader->dictionarySize);
 
-				primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
-				primitiveReader->dictionary[dictionaryIterator] = alloc(wordLength + 1);
-				result = ReadBinary(binaryReader,
-						(uint8_t*) primitiveReader->dictionary[dictionaryIterator],
-						(int) wordLength);
-				primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
-				if (result < 0)
+				integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
+				binaryStreamReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
+
+				/* read the dictionary items one by one*/
+				for (dictionaryIterator = 0; dictionaryIterator < primitiveReader->dictionarySize;
+						++dictionaryIterator)
 				{
-					LogError("Error while reading dictionary item");
-					return -1;
+					result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
+					if (result < 0)
+					{
+						LogError("Error while reading dictionary item length");
+						return -1;
+					}
+
+					primitiveReader->wordLength[dictionaryIterator] = (int) wordLength;
+					primitiveReader->dictionary[dictionaryIterator] = alloc(wordLength + 1);
+					result = ReadBinary(binaryStreamReader,
+							(uint8_t*) primitiveReader->dictionary[dictionaryIterator],
+							(int) wordLength);
+					primitiveReader->dictionary[dictionaryIterator][wordLength] = '\0';
+					if (result < 0)
+					{
+						LogError("Error while reading dictionary item");
+						return -1;
+					}
 				}
 			}
-		}
 
-		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
-		result = ReadInteger(fieldReader->kind, integerStreamReader, &udata64);
-		dictionaryItem = primitiveReader->dictionary[udata64];
+			/* read the dictionary item position */
+			integerStreamReader = &primitiveReader->readers[DATA_STREAM];
+			result = ReadInteger(fieldReader->kind, integerStreamReader, &udata64);
+
+			/* get the dictionary item by its position */
+			dictionaryItem = primitiveReader->dictionary[udata64];
+		}
+		else
+		{
+			/* if direct encoding is used, just read the current string */
+			binaryStreamReader = &primitiveReader->readers[DATA_STREAM];
+			integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
+
+			/* read the length of the string */
+			result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
+			if (result < 0)
+			{
+				LogError("Error while reading string length");
+				return -1;
+			}
+
+			/* allocate space for the string */
+			dictionaryItem = alloc((int) wordLength + 1);
+
+			/* read the string from the stream */
+			result = ReadBinary(binaryStreamReader, (uint8_t*) dictionaryItem, (int) wordLength);
+			if (result < 0)
+			{
+				LogError("Error while reading string");
+				return -1;
+			}
+			dictionaryItem[wordLength] = '\0';
+		}
 
 		switch (OrcGetPSQLType(fieldReader))
 		{
@@ -1098,6 +1174,14 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		break;
 	}
 	case DATEOID:
+	{
+		integerStreamReader = &primitiveReader->readers[DATA_STREAM];
+		result = ReadInteger(FIELD_TYPE__KIND__INT, integerStreamReader, &udata64);
+		days = ToSignedInteger(udata64);
+		days -= ORC_PSQL_EPOCH_IN_DAYS;
+		columnValue = DateADTGetDatum(days);
+		break;
+	}
 	case TIMESTAMPOID:
 	{
 		/* seconds primitiveReader */
@@ -1106,22 +1190,14 @@ Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull)
 		seconds = ToSignedInteger(udata64);
 		seconds += ORC_DIFF_POSTGRESQL;
 
-		if (OrcGetPSQLType(fieldReader) == DATEOID)
-		{
-			/* if this is a date type, don't read nsec stream at all */
-			/* TODO PostgreSQL adds one day, why ? */
-			columnValue = DateADTGetDatum(seconds / SECONDS_PER_DAY - 1);
-		}
-		else
-		{
-			/* nano seconds primitiveReader */
-			nanoSecondsReader = &primitiveReader->readers[SECONDARY_STREAM];
-			result |= ReadInteger(FIELD_TYPE__KIND__INT, nanoSecondsReader, &udata64);
-			newNanos = ParseNanos((long) udata64);
+		/* nano seconds primitiveReader */
+		nanoSecondsReader = &primitiveReader->readers[SECONDARY_STREAM];
+		result |= ReadInteger(FIELD_TYPE__KIND__INT, nanoSecondsReader, &udata64);
+		newNanos = ParseNanos((long) udata64);
 
-			columnValue = TimestampGetDatum(seconds * MICROSECONDS_PER_SECOND +
-					newNanos / NANOSECONDS_PER_MICROSECOND);
-		}
+		columnValue = TimestampGetDatum(seconds * MICROSECONDS_PER_SECOND +
+				newNanos / NANOSECONDS_PER_MICROSECOND);
+
 		break;
 	}
 	case NUMERICOID:

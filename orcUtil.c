@@ -72,128 +72,157 @@ int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 	return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
 }
 
-void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int length)
-{
-	char* timespecBuffer = NULL;
-	uint8_t *binaryValues = NULL;
-	int iterator = 0;
-
-	switch (kind)
-	{
-	case FIELD_TYPE__KIND__BOOLEAN:
-		fprintf(file, "%d", (int) value->value8);
-		break;
-	case FIELD_TYPE__KIND__BYTE:
-		fprintf(file, "%.2X", value->value8);
-		break;
-	case FIELD_TYPE__KIND__SHORT:
-	case FIELD_TYPE__KIND__INT:
-	case FIELD_TYPE__KIND__LONG:
-		fprintf(file, "%ld", value->value64);
-		break;
-	case FIELD_TYPE__KIND__FLOAT:
-		fprintf(file, "%.2f", value->floatValue);
-		break;
-	case FIELD_TYPE__KIND__DOUBLE:
-		fprintf(file, "%.2lf", value->doubleValue);
-		break;
-	case FIELD_TYPE__KIND__STRING:
-		fprintf(file, "%s", value->binary);
-		break;
-	case FIELD_TYPE__KIND__TIMESTAMP:
-		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
-		TimespecToStr(timespecBuffer, &value->time);
-		fprintf(file, "%s", timespecBuffer);
-		break;
-	case FIELD_TYPE__KIND__BINARY:
-		binaryValues = (uint8_t*) value->binary;
-		for (iterator = 0; iterator < length; ++iterator)
-		{
-			fprintf(file, "%.2X", binaryValues[iterator]);
-		}
-		break;
-	default:
-		break;
-	}
-}
-
-void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int length)
-{
-	char* timespecBuffer = NULL;
-	uint8_t *binaryValues = NULL;
-	int iterator = 0;
-
-	switch (kind)
-	{
-	case FIELD_TYPE__KIND__BOOLEAN:
-		elog(WARNING, "%d\n", (int) value->value8);
-		break;
-	case FIELD_TYPE__KIND__BYTE:
-		elog(WARNING,  "%.2X\n", value->value8);
-		break;
-	case FIELD_TYPE__KIND__SHORT:
-	case FIELD_TYPE__KIND__INT:
-	case FIELD_TYPE__KIND__LONG:
-		elog(WARNING, "%ld\n", value->value64);
-		break;
-	case FIELD_TYPE__KIND__FLOAT:
-		elog(WARNING, "%.2f\n", value->floatValue);
-		break;
-	case FIELD_TYPE__KIND__DOUBLE:
-		elog(WARNING, "%.2lf\n", value->doubleValue);
-		break;
-	case FIELD_TYPE__KIND__STRING:
-		elog(WARNING, "%s\n", value->binary);
-		break;
-	case FIELD_TYPE__KIND__TIMESTAMP:
-		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
-		TimespecToStr(timespecBuffer, &value->time);
-		elog(WARNING,  "%s\n", timespecBuffer);
-		break;
-	case FIELD_TYPE__KIND__BINARY:
-		binaryValues = (uint8_t*) value->binary;
-		for (iterator = 0; iterator < length; ++iterator)
-		{
-			elog(WARNING,  "%.2X\n", binaryValues[iterator]);
-		}
-		break;
-	default:
-		break;
-	}
-}
+//void PrintFieldValue(FILE* file, FieldValue* value, FieldType__Kind kind, int length)
+//{
+//	char* timespecBuffer = NULL;
+//	uint8_t *binaryValues = NULL;
+//	int iterator = 0;
+//
+//	switch (kind)
+//	{
+//	case FIELD_TYPE__KIND__BOOLEAN:
+//		fprintf(file, "%d", (int) value->value8);
+//		break;
+//	case FIELD_TYPE__KIND__BYTE:
+//		fprintf(file, "%.2X", value->value8);
+//		break;
+//	case FIELD_TYPE__KIND__SHORT:
+//	case FIELD_TYPE__KIND__INT:
+//	case FIELD_TYPE__KIND__LONG:
+//		fprintf(file, "%ld", value->value64);
+//		break;
+//	case FIELD_TYPE__KIND__FLOAT:
+//		fprintf(file, "%.2f", value->floatValue);
+//		break;
+//	case FIELD_TYPE__KIND__DOUBLE:
+//		fprintf(file, "%.2lf", value->doubleValue);
+//		break;
+//	case FIELD_TYPE__KIND__STRING:
+//		fprintf(file, "%s", value->binary);
+//		break;
+//	case FIELD_TYPE__KIND__TIMESTAMP:
+//		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
+//		TimespecToStr(timespecBuffer, &value->time);
+//		fprintf(file, "%s", timespecBuffer);
+//		break;
+//	case FIELD_TYPE__KIND__BINARY:
+//		binaryValues = (uint8_t*) value->binary;
+//		for (iterator = 0; iterator < length; ++iterator)
+//		{
+//			fprintf(file, "%.2X", binaryValues[iterator]);
+//		}
+//		break;
+//	default:
+//		break;
+//	}
+//}
+//
+//void PrintFieldValueAsWarning(FieldValue* value, FieldType__Kind kind, int length)
+//{
+//	char* timespecBuffer = NULL;
+//	uint8_t *binaryValues = NULL;
+//	int iterator = 0;
+//
+//	switch (kind)
+//	{
+//	case FIELD_TYPE__KIND__BOOLEAN:
+//		elog(WARNING, "%d\n", (int) value->value8);
+//		break;
+//	case FIELD_TYPE__KIND__BYTE:
+//		elog(WARNING, "%.2X\n", value->value8);
+//		break;
+//	case FIELD_TYPE__KIND__SHORT:
+//	case FIELD_TYPE__KIND__INT:
+//	case FIELD_TYPE__KIND__LONG:
+//		elog(WARNING, "%ld\n", value->value64);
+//		break;
+//	case FIELD_TYPE__KIND__FLOAT:
+//		elog(WARNING, "%.2f\n", value->floatValue);
+//		break;
+//	case FIELD_TYPE__KIND__DOUBLE:
+//		elog(WARNING, "%.2lf\n", value->doubleValue);
+//		break;
+//	case FIELD_TYPE__KIND__STRING:
+//		elog(WARNING, "%s\n", value->binary);
+//		break;
+//	case FIELD_TYPE__KIND__TIMESTAMP:
+//		timespecBuffer = alloc(TIMESPEC_BUFFER_LENGTH);
+//		TimespecToStr(timespecBuffer, &value->time);
+//		elog(WARNING, "%s\n", timespecBuffer);
+//		break;
+//	case FIELD_TYPE__KIND__BINARY:
+//		binaryValues = (uint8_t*) value->binary;
+//		for (iterator = 0; iterator < length; ++iterator)
+//		{
+//			elog(WARNING, "%.2X\n", binaryValues[iterator]);
+//		}
+//		break;
+//	default:
+//		break;
+//	}
+//}
 
 char* getTypeKindName(FieldType__Kind kind)
 {
-	if (kind == FIELD_TYPE__KIND__BOOLEAN)
+	switch (kind)
+	{
+	case FIELD_TYPE__KIND__BOOLEAN:
 		return "BOOLEAN";
-	else if (kind == FIELD_TYPE__KIND__BYTE)
+	case FIELD_TYPE__KIND__BYTE:
 		return "BYTE";
-	else if (kind == FIELD_TYPE__KIND__SHORT)
+	case FIELD_TYPE__KIND__SHORT:
 		return "SHORT";
-	else if (kind == FIELD_TYPE__KIND__INT)
+	case FIELD_TYPE__KIND__INT:
 		return "INT";
-	else if (kind == FIELD_TYPE__KIND__LONG)
+	case FIELD_TYPE__KIND__LONG:
 		return "LONG";
-	else if (kind == FIELD_TYPE__KIND__FLOAT)
+	case FIELD_TYPE__KIND__FLOAT:
 		return "FLOAT";
-	else if (kind == FIELD_TYPE__KIND__DOUBLE)
+	case FIELD_TYPE__KIND__DOUBLE:
 		return "DOUBLE";
-	else if (kind == FIELD_TYPE__KIND__STRING)
+	case FIELD_TYPE__KIND__STRING:
 		return "STRING";
-	else if (kind == FIELD_TYPE__KIND__BINARY)
+	case FIELD_TYPE__KIND__BINARY:
 		return "BINARY";
-	else if (kind == FIELD_TYPE__KIND__TIMESTAMP)
+	case FIELD_TYPE__KIND__TIMESTAMP:
 		return "TIMESTAMP";
-	else if (kind == FIELD_TYPE__KIND__LIST)
+	case FIELD_TYPE__KIND__DATE:
+		return "DATE";
+	case FIELD_TYPE__KIND__LIST:
 		return "LIST";
-	else if (kind == FIELD_TYPE__KIND__MAP)
+	case FIELD_TYPE__KIND__MAP:
 		return "MAP";
-	else if (kind == FIELD_TYPE__KIND__STRUCT)
+	case FIELD_TYPE__KIND__STRUCT:
 		return "STRUCT";
-	else if (kind == FIELD_TYPE__KIND__UNION)
+	case FIELD_TYPE__KIND__UNION:
 		return "UNION";
-	else if (kind == FIELD_TYPE__KIND__DECIMAL)
+	case FIELD_TYPE__KIND__DECIMAL:
 		return "DECIMAL";
+	default:
+		return "";
+	}
+}
+
+OrcStack*
+OrcStackInit(void* list, int elementSize, int length)
+{
+	OrcStack* stack = alloc(sizeof(OrcStack));
+	stack->list = list;
+	stack->elementSize = elementSize;
+	stack->length = length;
+	stack->position = 0;
+
+	return stack;
+}
+
+void* PopFromStack(OrcStack* stack)
+{
+	if (stack->position < stack->length)
+	{
+		return stack->list + (stack->position++) * stack->elementSize;
+	}
 	else
+	{
 		return NULL;
+	}
 }

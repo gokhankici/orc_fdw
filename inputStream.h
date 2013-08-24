@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include "orc.pb-c.h"
+#include "orcUtil.h"
 
 #define DEFAULT_BUFFER_SIZE			262144
 #define DEFAULT_ROW_INDEX_SIZE		262144
@@ -91,7 +92,7 @@ int FileStreamFree(FileStream*);
 char* FileStreamRead(FileStream*, int *length);
 int FileStreamReadByte(FileStream* stream, char* value);
 int FileStreamReadRemaining(FileStream*, char** data, int* dataLength);
-void FileStreamSkip(FileStream* stream, long fileOffset, long blockOffset);
+void FileStreamSkip(FileStream* stream, OrcStack* stack);
 int FileStreamEOF(FileStream* fileStream);
 
 #endif /* INPUTSTREAM_H_ */

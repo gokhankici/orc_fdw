@@ -217,6 +217,8 @@ static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType)
 		matches = orcType == FIELD_TYPE__KIND__STRING;
 		break;
 	case DATEOID:
+		matches = orcType == FIELD_TYPE__KIND__DATE;
+		break;
 	case TIMESTAMPOID:
 		matches = orcType == FIELD_TYPE__KIND__TIMESTAMP;
 		break;
@@ -358,6 +360,7 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 			field->fieldReader = alloc(sizeof(PrimitiveFieldReader));
 
 			primitiveReader = field->fieldReader;
+			primitiveReader->hasDictionary = 0;
 			primitiveReader->dictionary = NULL;
 			primitiveReader->dictionarySize = 0;
 			primitiveReader->wordLength = NULL;
@@ -581,13 +584,17 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 		primitiveFieldReader = fieldReader->fieldReader;
 		columnEncoding = stripeFooter->columns[fieldReader->orcColumnNo];
 
+		if (columnEncoding->kind == COLUMN_ENCODING__KIND__DIRECT_V2
+				|| columnEncoding->kind == COLUMN_ENCODING__KIND__DICTIONARY_V2)
+		{
+			LogError("Encoding V2 is not supported");
+			return -1;
+		}
+
 		if (fieldReader->kind == FIELD_TYPE__KIND__STRING && primitiveFieldReader)
 		{
-			if (columnEncoding->kind != COLUMN_ENCODING__KIND__DICTIONARY)
-			{
-				LogError("Only dictionary encoded strings are supported.");
-				return -1;
-			}
+			primitiveFieldReader->hasDictionary = (columnEncoding->kind
+					== COLUMN_ENCODING__KIND__DICTIONARY);
 
 			/* if field's type is string, (re)initialize dictionary */
 			if (primitiveFieldReader->dictionary)
@@ -620,7 +627,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 			return -1;
 		}
 
-		noOfDataStreams = GetStreamCount(fieldReader->kind);
+		noOfDataStreams = GetStreamCount(fieldReader->kind, columnEncoding->kind);
 
 		/* check if there exists enough stream for the current field */
 		if (*streamNo + noOfDataStreams > totalNoOfStreams)
@@ -630,7 +637,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 
 		for (dataStreamIterator = 0; dataStreamIterator < noOfDataStreams; ++dataStreamIterator)
 		{
-			streamKind = GetStreamKind(fieldKind, dataStreamIterator);
+			streamKind = GetStreamKind(fieldKind, columnEncoding->kind, dataStreamIterator);
 
 			if (fieldReader->required)
 			{
