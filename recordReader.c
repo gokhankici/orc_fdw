@@ -303,6 +303,8 @@ void StreamReaderSeek(StreamReader* streamReader, FieldType__Kind fieldType,
 	uint8_t data8 = 0;
 	uint64_t data64 = 0;
 	long* positionInRun = NULL;
+	long* bitsRead = NULL;
+	int booleanPosition = 0;
 
 	/* first jump to the given location in the stream */
 	FileStreamSkip(streamReader->stream, stack);
@@ -324,7 +326,19 @@ void StreamReaderSeek(StreamReader* streamReader, FieldType__Kind fieldType,
 			LogError("Error while getting position in the run");
 		}
 
-		streamReader->mask = 0x80 >> *positionInRun;
+		bitsRead = OrcStackPop(stack);
+		if (bitsRead == NULL)
+		{
+			LogError("Error while getting position in the run");
+		}
+
+		// TODO this can be improved with additional functions for skipping bit stream
+		booleanPosition = *positionInRun * 8 + *bitsRead;
+
+		for (iterator = 0; iterator < booleanPosition; ++iterator)
+		{
+			ReadBoolean(streamReader);
+		}
 
 		break;
 	}

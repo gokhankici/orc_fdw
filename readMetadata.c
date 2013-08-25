@@ -31,7 +31,7 @@ void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 	{
 		printf("    ");
 	}
-	printf("%2d) Name : %-8s | Kind : %s\n", typeIndex, typeName, getTypeKindName(type->kind));
+	printf("%2d) Name : %-8s | Kind : %s\n", typeIndex, typeName, GetTypeKindName(type->kind));
 	for (typeIterator = 0; typeIterator < type->n_subtypes; ++typeIterator)
 	{
 		subTypeIndex = type->subtypes[typeIterator];
@@ -53,7 +53,7 @@ void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 			{
 				printf("    ");
 			}
-			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, getTypeKindName(kind));
+			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, GetTypeKindName(kind));
 
 			/* print the child of the list (which is the type of the list) */
 			printType(types, "element", subTypeIndex + 1, depth + 2);
@@ -64,7 +64,7 @@ void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 			{
 				printf("    ");
 			}
-			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, getTypeKindName(kind));
+			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, GetTypeKindName(kind));
 
 			/* print the key of the map */
 			printType(types, "key", subType->subtypes[0], depth + 2);
@@ -76,7 +76,7 @@ void printType(FieldType** types, char* typeName, int typeIndex, int depth)
 			{
 				printf("    ");
 			}
-			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, getTypeKindName(kind));
+			printf("%2d) Name : %-8s | Kind : %s\n", subTypeIndex, subTypeName, GetTypeKindName(kind));
 			break;
 		}
 	}
@@ -143,19 +143,19 @@ void printStatistics(ColumnStatistics* statistics, FieldType* fieldType)
 		/* to display which type has uses which statistics type */
 		if (statistics->intstatistics)
 		{
-			printf("    %s -> int\n", getTypeKindName(fieldType->kind));
+			printf("    %s -> int\n", GetTypeKindName(fieldType->kind));
 		}
 		else if (statistics->doublestatistics)
 		{
-			printf("    %s -> double\n", getTypeKindName(fieldType->kind));
+			printf("    %s -> double\n", GetTypeKindName(fieldType->kind));
 		}
 		else if (statistics->bucketstatistics)
 		{
-			printf("    %s -> bucket\n", getTypeKindName(fieldType->kind));
+			printf("    %s -> bucket\n", GetTypeKindName(fieldType->kind));
 		}
 		else if (statistics->decimalstatistics)
 		{
-			printf("    %s -> decimal\n", getTypeKindName(fieldType->kind));
+			printf("    %s -> decimal\n", GetTypeKindName(fieldType->kind));
 		}
 
 		break;

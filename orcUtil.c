@@ -162,7 +162,7 @@ int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 //	}
 //}
 
-char* getTypeKindName(FieldType__Kind kind)
+char* GetTypeKindName(FieldType__Kind kind)
 {
 	switch (kind)
 	{

@@ -46,7 +46,7 @@ int TimespecToStr(char* timespecBuffer, struct timespec *ts);
 
 int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize);
 
-char* getTypeKindName(FieldType__Kind kind);
+char* GetTypeKindName(FieldType__Kind kind);
 
 OrcStack* OrcStackInit(void* list, int elementSize, int length);
 void* OrcStackPop(OrcStack* stack);

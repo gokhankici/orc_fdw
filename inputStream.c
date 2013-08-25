@@ -762,7 +762,7 @@ void FileStreamSkip(FileStream* stream, OrcStack* stack)
 			ReadNextCompressedBlock(stream);
 		}
 
-		if (stream->length >= *blockOffset)
+		if (*blockOffset >= stream->length)
 		{
 			LogError("Not enough bytes to skip in the uncompressed stream");
 		}
