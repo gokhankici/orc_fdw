@@ -12,9 +12,6 @@
 #include "fileReader.h"
 #include "orcUtil.h"
 
-static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
-static void StructFieldReaderFree(StructFieldReader* reader);
-
 /* forward declarations of static functions */
 static int ParseNanos(long serializedData);
 static int ReadVarLenInteger(FileStream* stream, uint64_t *data);
@@ -30,9 +27,6 @@ static int ReadDouble(StreamReader* fpState, double *data);
 static int ReadBinary(StreamReader* binaryReaderState, uint8_t* data, int length);
 static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* length);
 static int ReadListItem(FieldReader* fieldReader, Field* field, int* length);
-
-static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
-static void StructFieldReaderFree(StructFieldReader* structReader);
 
 /**
  * Decode the nano seconds stored in the file
@@ -983,56 +977,6 @@ int GetStreamCount(FieldType__Kind type, ColumnEncoding__Kind encoding)
 	default:
 		return -1;
 	}
-}
-
-/**
- * static function to free up the streams of a primitive field reader
- */
-static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
-{
-	int iterator = 0;
-	if (reader->dictionary)
-	{
-		for (iterator = 0; iterator < reader->dictionarySize; ++iterator)
-		{
-			freeMemory(reader->dictionary[iterator]);
-		}
-		freeMemory(reader->dictionary);
-		freeMemory(reader->wordLength);
-
-		reader->dictionary = NULL;
-		reader->wordLength = NULL;
-	}
-	for (iterator = 0; iterator < MAX_STREAM_COUNT; ++iterator)
-	{
-		if (reader->readers[iterator].stream != NULL)
-		{
-			FileStreamFree(reader->readers[iterator].stream);
-			reader->readers[iterator].stream = NULL;
-		}
-	}
-	freeMemory(reader);
-}
-
-/**
- * static function to free up the fields of a structure field reader
- */
-static void StructFieldReaderFree(StructFieldReader* structReader)
-{
-	FieldReader* subField = NULL;
-	int iterator = 0;
-
-	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
-	{
-		subField = structReader->fields[iterator];
-		if (subField->required)
-		{
-			FieldReaderFree(subField);
-		}
-		freeMemory(subField);
-	}
-	freeMemory(structReader->fields);
-	freeMemory(structReader);
 }
 
 /*

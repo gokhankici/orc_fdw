@@ -39,7 +39,7 @@ StripeFooter* StripeFooterInit(FILE* file, StripeInformation* stripeInfo,
 int FieldReaderAllocate(FieldReader* reader, Footer* footer, List* columns);
 int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* stripe,
 		StripeFooter* stripeFooter, CompressionParameters* parameters);
-void FieldReaderSeek(FieldReader rowReader, int strideNo);
+void FieldReaderSeek(FieldReader* rowReader, int strideNo);
 int FieldReaderFree(FieldReader* reader);
 
 #endif /* FILEREADER_H_ */

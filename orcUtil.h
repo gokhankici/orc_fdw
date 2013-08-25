@@ -50,5 +50,6 @@ char* getTypeKindName(FieldType__Kind kind);
 
 OrcStack* OrcStackInit(void* list, int elementSize, int length);
 void* OrcStackPop(OrcStack* stack);
+void OrcStackFree(OrcStack* stack);
 
 #endif /* ORC_UTIL_H_ */

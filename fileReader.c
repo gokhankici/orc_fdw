@@ -13,6 +13,9 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 		int* streamNo, StripeFooter* stripeFooter, CompressionParameters* parameters);
 static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType);
 
+static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
+static void StructFieldReaderFree(StructFieldReader* structReader);
+
 /**
  * Reads the postscript from the orc file and returns the postscript. Stores its offset to parameter.
  *
@@ -418,6 +421,7 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 				subField->rowIndex = NULL;
 			}
 
+			MemoryContext x = CurrentMemoryContext;
 			indexStream = FileStreamInit(file, currentIndexOffset,
 					currentIndexOffset + stream->length,
 					DEFAULT_ROW_INDEX_SIZE, parameters->compressionKind);
@@ -434,8 +438,7 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 
 			if (subField->kind == FIELD_TYPE__KIND__LIST)
 			{
-				/* if field type is list, stream count for its children */
-				streamNo++;
+				LogError("Indexing functionality for list types aren't supported");
 			}
 		}
 
@@ -584,6 +587,7 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 		/* these are the supported types, unsupported types are declared above */
 		primitiveFieldReader = fieldReader->fieldReader;
 		columnEncoding = stripeFooter->columns[fieldReader->orcColumnNo];
+		primitiveFieldReader->encoding = columnEncoding->kind;
 
 		if (columnEncoding->kind == COLUMN_ENCODING__KIND__DIRECT_V2
 				|| columnEncoding->kind == COLUMN_ENCODING__KIND__DICTIONARY_V2)
@@ -662,14 +666,18 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 	}
 }
 
-void FieldReaderSeek(FieldReader rowReader, int strideNo)
+void FieldReaderSeek(FieldReader* rowReader, int strideNo)
 {
 	StructFieldReader* structReader = (StructFieldReader*) rowReader->fieldReader;
-	FieldReader subfield = NULL;
-	int columnId = 0;
+	FieldReader* subfield = NULL;
+	PrimitiveFieldReader* primitiveFieldReader = NULL;
 	RowIndex* rowIndex = NULL;
 	RowIndexEntry* rowIndexEntry = NULL;
 	OrcStack* stack = NULL;
+	FieldType__Kind streamKind = 0;
+	int columnId = 0;
+	int noOfDataStreams = 0;
+	int dataStreamIterator = 0;
 
 	for (columnId = 0; columnId < structReader->noOfFields; ++columnId)
 	{
@@ -684,11 +692,94 @@ void FieldReaderSeek(FieldReader rowReader, int strideNo)
 
 			if (subfield->hasPresentBitReader)
 			{
-				StreamReaderSeek(subfield->presentBitReader, subfield->kind,
+				StreamReaderSeek(&subfield->presentBitReader, subfield->kind,
 						FIELD_TYPE__KIND__BOOLEAN, stack);
 			}
+
+			switch (subfield->kind)
+			{
+			case FIELD_TYPE__KIND__LIST:
+				LogError("Row skipping for list types aren't implemented yet");
+				break;
+			default:
+				primitiveFieldReader = (PrimitiveFieldReader*) subfield->fieldReader;
+
+				noOfDataStreams = GetStreamCount(subfield->kind, primitiveFieldReader->encoding);
+
+				for (dataStreamIterator = 0; dataStreamIterator < noOfDataStreams;
+						++dataStreamIterator)
+				{
+					/*
+					 * When dictionary encoding is used for strings, we only skip the data stream
+					 * which is the integer stream for the dictionary item position.
+					 */
+					if (subfield->kind == FIELD_TYPE__KIND__STRING
+							&& primitiveFieldReader->encoding == COLUMN_ENCODING__KIND__DICTIONARY
+							&& dataStreamIterator != DATA_STREAM)
+					{
+						continue;
+					}
+
+					streamKind = GetStreamKind(subfield->kind, primitiveFieldReader->encoding,
+							dataStreamIterator);
+					StreamReaderSeek(&primitiveFieldReader->readers[dataStreamIterator],
+							subfield->kind, streamKind, stack);
+				}
+			}
+
+			OrcStackFree(stack);
 		}
 	}
+}
+
+/**
+ * static function to free up the streams of a primitive field reader
+ */
+static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader)
+{
+	int iterator = 0;
+	if (reader->dictionary)
+	{
+		for (iterator = 0; iterator < reader->dictionarySize; ++iterator)
+		{
+			freeMemory(reader->dictionary[iterator]);
+		}
+		freeMemory(reader->dictionary);
+		freeMemory(reader->wordLength);
+
+		reader->dictionary = NULL;
+		reader->wordLength = NULL;
+	}
+	for (iterator = 0; iterator < MAX_STREAM_COUNT; ++iterator)
+	{
+		if (reader->readers[iterator].stream != NULL)
+		{
+			FileStreamFree(reader->readers[iterator].stream);
+			reader->readers[iterator].stream = NULL;
+		}
+	}
+	freeMemory(reader);
+}
+
+/**
+ * static function to free up the fields of a structure field reader
+ */
+static void StructFieldReaderFree(StructFieldReader* structReader)
+{
+	FieldReader* subField = NULL;
+	int iterator = 0;
+
+	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
+	{
+		subField = structReader->fields[iterator];
+		if (subField->required)
+		{
+			FieldReaderFree(subField);
+		}
+		freeMemory(subField);
+	}
+	freeMemory(structReader->fields);
+	freeMemory(structReader);
 }
 
 /**

@@ -485,7 +485,6 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	int columnCount = tupleDescriptor->natts;
 
 	List* strideRestrictions = NIL;
-	int currentStride = 0;
 	int currentIndexStride = 0;
 	int noOfSkippedStride = 0;
 	bool strideSkipped = false;
@@ -565,7 +564,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 				}
 				else
 				{
-
+					FieldReaderSeek(execState->recordReader, currentIndexStride);
 				}
 			}
 		}

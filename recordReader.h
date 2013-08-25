@@ -128,6 +128,7 @@ typedef struct
 typedef struct
 {
 	StreamReader readers[MAX_STREAM_COUNT];
+	ColumnEncoding__Kind encoding;
 
 	/* for string type to store the dictionary */
 	char hasDictionary;
