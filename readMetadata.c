@@ -6,7 +6,7 @@
 #include "recordReader.h"
 #include "orcUtil.h"
 
-#define PRINT_INDEX_INFO 0
+#define PRINT_INDEX_INFO 1
 
 /* TODO remove these two later */
 long totalBytesRead = 0;
@@ -101,21 +101,22 @@ void printAllStatistics(ColumnStatistics* statistics)
 	intStatistics = statistics->intstatistics;
 	if (intStatistics)
 	{
-		printf("    min: %ld | max: %ld | sum: %ld\n", intStatistics->minimum,
-				intStatistics->maximum, intStatistics->sum);
+		printf("    count: %ld | min: %ld | max: %ld | sum: %ld\n", statistics->numberofvalues,
+				intStatistics->minimum, intStatistics->maximum, intStatistics->sum);
 	}
 
 	doubleStatistics = statistics->doublestatistics;
 	if (doubleStatistics)
 	{
-		printf("    min: %lf | max: %lf | sum: %lf\n", doubleStatistics->minimum,
-				doubleStatistics->maximum, doubleStatistics->sum);
+		printf("    count: %ld | min: %lf | max: %lf | sum: %lf\n", statistics->numberofvalues,
+				doubleStatistics->minimum, doubleStatistics->maximum, doubleStatistics->sum);
 	}
 
 	stringStatistics = statistics->stringstatistics;
 	if (stringStatistics)
 	{
-		printf("    min: %s | max: %s\n", stringStatistics->minimum, stringStatistics->maximum);
+		printf("    count: %ld | min: %s | max: %s\n", statistics->numberofvalues,
+				stringStatistics->minimum, stringStatistics->maximum);
 	}
 
 	bucketStatistics = statistics->bucketstatistics;
@@ -131,15 +132,15 @@ void printAllStatistics(ColumnStatistics* statistics)
 	decimalStatistics = statistics->decimalstatistics;
 	if (decimalStatistics)
 	{
-		printf("    min: %s | max: %s | sum: %s\n", decimalStatistics->minimum,
-				decimalStatistics->maximum, decimalStatistics->sum);
+		printf("    count: %ld | min: %s | max: %s | sum: %s\n", statistics->numberofvalues,
+				decimalStatistics->minimum, decimalStatistics->maximum, decimalStatistics->sum);
 	}
 
 	dateStatistics = statistics->datestatistics;
 	if (dateStatistics)
 	{
-		printf("    min: %d | max: %d\n", dateStatistics->minimum,
-				dateStatistics->maximum);
+		printf("    count: %ld | min: %d | max: %d\n", statistics->numberofvalues,
+				dateStatistics->minimum, dateStatistics->maximum);
 	}
 }
 
