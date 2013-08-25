@@ -404,6 +404,7 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 		stream = stripeFooter->streams[streamNo];
 	}
 
+	/* read the row index information from the file */
 	while (streamNo < stripeFooter->n_streams && stream->kind == STREAM__KIND__ROW_INDEX)
 	{
 		subField = structReader->fields[streamNo - 1];
@@ -661,3 +662,75 @@ static int FieldReaderInitHelper(FieldReader* fieldReader, FILE* file, long* cur
 	}
 }
 
+void FieldReaderSeek(FieldReader rowReader, int strideNo)
+{
+	StructFieldReader* structReader = (StructFieldReader*) rowReader->fieldReader;
+	FieldReader subfield = NULL;
+	int columnId = 0;
+	RowIndex* rowIndex = NULL;
+	RowIndexEntry* rowIndexEntry = NULL;
+	OrcStack* stack = NULL;
+
+	for (columnId = 0; columnId < structReader->noOfFields; ++columnId)
+	{
+		subfield = structReader->fields[columnId];
+
+		if (subfield->required)
+		{
+			rowIndex = subfield->rowIndex;
+			rowIndexEntry = rowIndex->entry[strideNo];
+			stack = OrcStackInit(rowIndexEntry->positions, sizeof(uint64_t),
+					rowIndexEntry->n_positions);
+
+			if (subfield->hasPresentBitReader)
+			{
+				StreamReaderSeek(subfield->presentBitReader, subfield->kind,
+						FIELD_TYPE__KIND__BOOLEAN, stack);
+			}
+		}
+	}
+}
+
+/**
+ * Frees up a field reader
+ *
+ * @return 0 for success, -1 for failure
+ */
+int FieldReaderFree(FieldReader* reader)
+{
+	ListFieldReader* listReader = NULL;
+
+	if (reader == NULL)
+	{
+		return 0;
+	}
+
+	StreamReaderFree(&reader->presentBitReader);
+
+	if (reader->fieldReader == NULL)
+	{
+		return 0;
+	}
+
+	switch (reader->kind)
+	{
+	case FIELD_TYPE__KIND__STRUCT:
+		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
+		break;
+	case FIELD_TYPE__KIND__LIST:
+		listReader = (ListFieldReader*) reader->fieldReader;
+		StreamReaderFree(&listReader->lengthReader);
+		FieldReaderFree(&listReader->itemReader);
+		freeMemory(listReader);
+		break;
+	case FIELD_TYPE__KIND__DECIMAL:
+	case FIELD_TYPE__KIND__UNION:
+	case FIELD_TYPE__KIND__MAP:
+		return -1;
+	default:
+		PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->fieldReader);
+		break;
+	}
+
+	return 0;
+}

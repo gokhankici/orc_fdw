@@ -15,6 +15,25 @@
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
 static void StructFieldReaderFree(StructFieldReader* reader);
 
+/* forward declarations of static functions */
+static int ParseNanos(long serializedData);
+static int ReadVarLenInteger(FileStream* stream, uint64_t *data);
+static int BooleanReaderInit(StreamReader* boolState);
+static int ByteReaderInit(StreamReader* byteState);
+static int IntegerReaderInit(FieldType__Kind kind, StreamReader* intState);
+
+static char ReadBoolean(StreamReader* booleanReaderState);
+static int ReadByte(StreamReader* byteReaderState, uint8_t *result);
+static int ReadInteger(FieldType__Kind kind, StreamReader* intReaderState, uint64_t *result);
+static int ReadFloat(StreamReader* fpState, float *data);
+static int ReadDouble(StreamReader* fpState, double *data);
+static int ReadBinary(StreamReader* binaryReaderState, uint8_t* data, int length);
+static int ReadPrimitiveType(FieldReader* fieldReader, FieldValue* value, int* length);
+static int ReadListItem(FieldReader* fieldReader, Field* field, int* length);
+
+static void PrimitiveFieldReaderFree(PrimitiveFieldReader* reader);
+static void StructFieldReaderFree(StructFieldReader* structReader);
+
 /**
  * Decode the nano seconds stored in the file
  *
@@ -280,6 +299,88 @@ int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FIL
 		return 0;
 	default:
 		return -1;
+	}
+}
+
+void StreamReaderSeek(StreamReader* streamReader, FieldType__Kind fieldType,
+		FieldType__Kind streamKind, OrcStack* stack)
+{
+	int iterator = 0;
+	uint8_t data8 = 0;
+	uint64_t data64 = 0;
+	long* positionInRun = NULL;
+
+	/* first jump to the given location in the stream */
+	FileStreamSkip(streamReader->stream, stack);
+
+	/*
+	 * Then switch by looking at the stream kind to initialize the stream readers.
+	 * Some streams use run-length encoding to encode the values, so also get
+	 * the current position in the run and jump to that position.
+	 */
+	switch (streamKind)
+	{
+	case FIELD_TYPE__KIND__BOOLEAN:
+	{
+		BooleanReaderInit(streamReader);
+
+		positionInRun = OrcStackPop(stack);
+		if (positionInRun == NULL)
+		{
+			LogError("Error while getting position in the run");
+		}
+
+		streamReader->mask = 0x80 >> *positionInRun;
+
+		break;
+	}
+	case FIELD_TYPE__KIND__BYTE:
+	{
+		ByteReaderInit(streamReader);
+
+		positionInRun = OrcStackPop(stack);
+		if (positionInRun == NULL)
+		{
+			LogError("Error while getting position in the run");
+		}
+
+		for (iterator = 0; iterator < *positionInRun; ++iterator)
+		{
+			ReadByte(streamReader, &data8);
+		}
+
+		break;
+	}
+	case FIELD_TYPE__KIND__SHORT:
+	case FIELD_TYPE__KIND__INT:
+	case FIELD_TYPE__KIND__LONG:
+	{
+		IntegerReaderInit(streamKind, streamReader);
+
+		positionInRun = OrcStackPop(stack);
+		if (positionInRun == NULL)
+		{
+			LogError("Error while getting position in the run");
+		}
+
+		for (iterator = 0; iterator < *positionInRun; ++iterator)
+		{
+			ReadInteger(fieldType, streamReader, &data64);
+		}
+
+		break;
+	}
+	case FIELD_TYPE__KIND__BINARY:
+	case FIELD_TYPE__KIND__FLOAT:
+	case FIELD_TYPE__KIND__DOUBLE:
+	{
+		/* no need for initializer or jumping since RLE is not used in these */
+		break;
+	}
+	default:
+	{
+		break;
+	}
 	}
 }
 
@@ -932,50 +1033,6 @@ static void StructFieldReaderFree(StructFieldReader* structReader)
 	}
 	freeMemory(structReader->fields);
 	freeMemory(structReader);
-}
-
-/**
- * Frees up a field reader
- *
- * @return 0 for success, -1 for failure
- */
-int FieldReaderFree(FieldReader* reader)
-{
-	ListFieldReader* listReader = NULL;
-
-	if (reader == NULL)
-	{
-		return 0;
-	}
-
-	StreamReaderFree(&reader->presentBitReader);
-
-	if (reader->fieldReader == NULL)
-	{
-		return 0;
-	}
-
-	switch (reader->kind)
-	{
-	case FIELD_TYPE__KIND__STRUCT:
-		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
-		break;
-	case FIELD_TYPE__KIND__LIST:
-		listReader = (ListFieldReader*) reader->fieldReader;
-		StreamReaderFree(&listReader->lengthReader);
-		FieldReaderFree(&listReader->itemReader);
-		freeMemory(listReader);
-		break;
-	case FIELD_TYPE__KIND__DECIMAL:
-	case FIELD_TYPE__KIND__UNION:
-	case FIELD_TYPE__KIND__MAP:
-		return -1;
-	default:
-		PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->fieldReader);
-		break;
-	}
-
-	return 0;
 }
 
 /*

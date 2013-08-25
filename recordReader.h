@@ -154,15 +154,14 @@ typedef struct
 int StreamReaderFree(StreamReader* streamReader);
 int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file,
 		long offset, long limit, CompressionParameters* parameters);
-int StreamReaderSkip(StreamReader* streamReader, int noOfElements);
+void StreamReaderSeek(StreamReader* streamReader, FieldType__Kind fieldType,
+		FieldType__Kind streamKind, OrcStack* stack);
 
 /**
  * Reads one element from the type.
  * The returned value is <0 for error, 1 for null, 0 for not-null value
  */
 int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
-int ReadDictionary(FieldReader* fieldReader);
-int FieldReaderFree(FieldReader* reader);
 
 /*
  * Functions to read the column value directly into the native PSQL format

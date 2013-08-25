@@ -478,15 +478,19 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	StripeInformation* currentStripe = execState->currentStripeInfo;
 	MemoryContext oldContext = CurrentMemoryContext;
 	Footer* footer = execState->footer;
-	List* strideRestrictions = NIL;
 
 	TupleDesc tupleDescriptor = tupleSlot->tts_tupleDescriptor;
 	Datum *columnValues = tupleSlot->tts_values;
 	bool *columnNulls = tupleSlot->tts_isnull;
 	int columnCount = tupleDescriptor->natts;
+
+	List* strideRestrictions = NIL;
+	int currentStride = 0;
 	int currentIndexStride = 0;
-	bool strideSkipped = false;
 	int noOfSkippedStride = 0;
+	bool strideSkipped = false;
+	bool nextStripeIsNeeded = false;
+	int totalStrides = 0;
 
 	/* initialize all values for this row to null */
 	memset(columnValues, 0, columnCount * sizeof(Datum));
@@ -494,43 +498,78 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 
 	ExecClearTuple(tupleSlot);
 
-	if (currentStripe == NULL)
+	/*
+	 * This is loop to implement the row skipping functionality. When we try to read a row,
+	 * if we are reading the first element of a stride, we check the min/max values of the
+	 * needed columns in that stride and create a restriction clause that contains that
+	 * values (like col1 >= col1_min AND col1 <= col1_max AND col2 >= col2_min ... ).
+	 *
+	 * If we didn't reach the end of the stipe while skipping columns, we jump to the needed
+	 * stride and adjust the next pointers by looking at the current values in the RLE encoding.
+	 *
+	 * If we reached the end of the stripe, we start the loop again by reading that stripe.
+	 * Unnecessary reads, like reading the dictionary into the memory, is not done since
+	 * function to read from that column is not called in this loop.
+	 */
+	do
 	{
-		/* file is empty */
-		return tupleSlot;
-	}
-	else if (execState->currentLineNumber >= currentStripe->numberofrows)
-	{
-		/* End of stripe, read next one */
-		OrcGetNextStripe(execState);
-
-		if (execState->nextStripeNumber > execState->footer->n_stripes)
+		if (currentStripe == NULL)
 		{
-			/* finish reading if there are no more stipes left */
+			/* file is empty */
 			return tupleSlot;
 		}
-	}
-
-	if (footer->rowindexstride > 0 && execState->currentLineNumber % footer->rowindexstride == 0)
-	{
-		do
+		else if (execState->currentLineNumber >= currentStripe->numberofrows)
 		{
-			currentIndexStride = (execState->currentLineNumber + noOfSkippedStride * footer->rowindexstride) / footer->rowindexstride;
-			strideRestrictions = OrcCreateStrideRestrictions(execState->recordReader,
-					currentIndexStride);
-			strideSkipped = predicate_refuted_by(strideRestrictions, execState->opExpressionList);
+			/* End of stripe, read next one */
+			OrcGetNextStripe(execState);
 
-			if (strideSkipped)
+			if (execState->nextStripeNumber > execState->footer->n_stripes)
 			{
-				noOfSkippedStride++;
+				/* finish reading if there are no more stipes left */
+				return tupleSlot;
 			}
+		}
 
-		} while (strideSkipped
-				&& (execState->currentLineNumber + noOfSkippedStride * footer->rowindexstride)
-						< currentStripe->numberofrows);
+		/* check if indices are defined in the file */
+		if (footer->rowindexstride > 0
+				&& execState->currentLineNumber % footer->rowindexstride == 0)
+		{
+			totalStrides = currentStripe->numberofrows / footer->rowindexstride
+					+ ((currentStripe->numberofrows % footer->rowindexstride) ? 1 : 0);
+			currentIndexStride = execState->currentLineNumber / footer->rowindexstride;
 
-		elog(WARNING, "# stride skipped: %d", noOfSkippedStride);
-	}
+			/* while the current stride is not needed and there are stride remaining, iterate the strides */
+			do
+			{
+				strideRestrictions = OrcCreateStrideRestrictions(execState->recordReader,
+						currentIndexStride);
+				strideSkipped = predicate_refuted_by(strideRestrictions,
+						execState->opExpressionList);
+
+				if (strideSkipped)
+				{
+					currentIndexStride++;
+					noOfSkippedStride++;
+				}
+			} while (strideSkipped && currentIndexStride < totalStrides);
+
+			/* if we have skipped some strides, we can jump to that stride or to a new stripe */
+			if (noOfSkippedStride > 0)
+			{
+				execState->currentLineNumber += noOfSkippedStride * footer->rowindexstride;
+
+				if (execState->currentLineNumber >= currentStripe->numberofrows)
+				{
+					execState->currentLineNumber = currentStripe->numberofrows;
+					nextStripeIsNeeded = true;
+				}
+				else
+				{
+
+				}
+			}
+		}
+	} while (nextStripeIsNeeded);
 
 	FillTupleSlot(execState->recordReader, columnValues, columnNulls, oldContext,
 			execState->orcContext);

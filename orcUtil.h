@@ -12,7 +12,6 @@
 #include "storage/fd.h"
 
 #include "orc.pb-c.h"
-#include "recordReader.h"
 
 typedef struct
 {
@@ -50,6 +49,6 @@ int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 char* getTypeKindName(FieldType__Kind kind);
 
 OrcStack* OrcStackInit(void* list, int elementSize, int length);
-void* PopFromStack(OrcStack* stack);
+void* OrcStackPop(OrcStack* stack);
 
 #endif /* ORC_UTIL_H_ */

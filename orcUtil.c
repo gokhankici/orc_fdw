@@ -215,11 +215,16 @@ OrcStackInit(void* list, int elementSize, int length)
 	return stack;
 }
 
-void* PopFromStack(OrcStack* stack)
+void OrcStackFree(OrcStack* stack)
+{
+	freeMemory(stack);
+}
+
+void* OrcStackPop(OrcStack* stack)
 {
 	if (stack->position < stack->length)
 	{
-		return stack->list + (stack->position++) * stack->elementSize;
+		return ((char*) stack->list) + (stack->position++) * stack->elementSize;
 	}
 	else
 	{
