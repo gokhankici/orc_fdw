@@ -334,6 +334,16 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 	MemoryContext oldContext = CurrentMemoryContext;
 	int result = 0;
 
+	if (execState->stripeFooter)
+	{
+		stripe_footer__free_unpacked(execState->stripeFooter, NULL);
+	}
+
+	if (execState->currentStripeInfo)
+	{
+		stripe_information__free_unpacked(execState->currentStripeInfo, NULL);
+	}
+
 	if (execState->nextStripeNumber < footer->n_stripes)
 	{
 		stripeInfo = footer->stripes[execState->nextStripeNumber];
@@ -354,13 +364,14 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 			elog(ERROR, "Cannot read the next stripe information\n");
 		}
 
-		if (execState->stripeFooter)
-		{
-			stripe_footer__free_unpacked(execState->stripeFooter, NULL);
-		}
-
 		execState->stripeFooter = stripeFooter;
 		execState->currentStripeInfo = stripeInfo;
+		execState->currentLineNumber = 0;
+	}
+	else
+	{
+		execState->stripeFooter = NULL;
+		execState->currentStripeInfo = NULL;
 		execState->currentLineNumber = 0;
 	}
 
@@ -512,6 +523,8 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	 */
 	do
 	{
+		nextStripeIsNeeded = false;
+
 		if (currentStripe == NULL)
 		{
 			/* file is empty */
@@ -521,6 +534,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		{
 			/* End of stripe, read next one */
 			OrcGetNextStripe(execState);
+			currentStripe = execState->currentStripeInfo;
 
 			if (execState->nextStripeNumber > execState->footer->n_stripes)
 			{
@@ -536,6 +550,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 			totalStrides = currentStripe->numberofrows / footer->rowindexstride
 					+ ((currentStripe->numberofrows % footer->rowindexstride) ? 1 : 0);
 			currentIndexStride = execState->currentLineNumber / footer->rowindexstride;
+			noOfSkippedStride = 0;
 
 			/* while the current stride is not needed and there are stride remaining, iterate the strides */
 			do
@@ -564,6 +579,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 				}
 				else
 				{
+//					elog(WARNING, "reading from stride %d/%d", currentIndexStride,execState->nextStripeNumber);
 					FieldReaderSeek(execState->recordReader, currentIndexStride);
 				}
 			}
@@ -601,6 +617,8 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 	}
 
 	/* clears all file related memory memory */
+	FieldReaderFree(executionState->recordReader);
+
 	MemoryContextDelete(executionState->orcContext);
 
 	if (executionState->stripeFooter)
@@ -609,11 +627,11 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 		executionState->stripeFooter = NULL;
 	}
 
-	if (executionState->footer)
-	{
-		footer__free_unpacked(executionState->footer, NULL);
-		executionState->footer = NULL;
-	}
+//	if (executionState->footer)
+//	{
+//		footer__free_unpacked(executionState->footer, NULL);
+//		executionState->footer = NULL;
+//	}
 
 	if (executionState->postScript)
 	{
@@ -898,6 +916,7 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 	bool *columnNulls = NULL;
 	TupleTableSlot *scanTupleSlot = NULL;
 	List *columnList = NIL;
+	List *opExpressionList = NIL;
 	List *foreignPrivateList = NULL;
 	ForeignScanState *scanState = NULL;
 	ForeignScan *foreignScan = NULL;
@@ -922,8 +941,10 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 		columnList = lappend(columnList, column);
 	}
 
+
 	/* setup foreign scan plan node */
-	foreignPrivateList = list_make1(columnList);
+	// TODO is giving an empty expression list ok?
+	foreignPrivateList = list_make2(columnList,opExpressionList);
 	foreignScan = makeNode(ForeignScan);
 	foreignScan->fdw_private = foreignPrivateList;
 

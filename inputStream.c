@@ -730,7 +730,7 @@ void FileStreamSkip(FileStream* stream, OrcStack* stack)
 
 	fileOffset = OrcStackPop(stack);
 
-	if (fileOffset)
+	if (!fileOffset)
 	{
 		LogError("Not enough position offset to skip");
 	}
@@ -747,7 +747,7 @@ void FileStreamSkip(FileStream* stream, OrcStack* stack)
 	{
 		blockOffset = OrcStackPop(stack);
 
-		if (blockOffset)
+		if (!blockOffset)
 		{
 			LogError("Not enough position offset to skip");
 		}

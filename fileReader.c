@@ -184,6 +184,8 @@ int FieldReaderAllocate(FieldReader* reader, Footer* footer, List* columns)
 	reader->hasPresentBitReader = 0;
 	reader->kind = FIELD_TYPE__KIND__STRUCT;
 	reader->required = 1;
+	reader->psqlVariable = NULL;
+	reader->rowIndex = NULL;
 
 	reader->presentBitReader.stream = NULL;
 
@@ -421,7 +423,6 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 				subField->rowIndex = NULL;
 			}
 
-			MemoryContext x = CurrentMemoryContext;
 			indexStream = FileStreamInit(file, currentIndexOffset,
 					currentIndexOffset + stream->length,
 					DEFAULT_ROW_INDEX_SIZE, parameters->compressionKind);
@@ -713,8 +714,8 @@ void FieldReaderSeek(FieldReader* rowReader, int strideNo)
 					 * When dictionary encoding is used for strings, we only skip the data stream
 					 * which is the integer stream for the dictionary item position.
 					 */
-					if (subfield->kind == FIELD_TYPE__KIND__STRING
-							&& primitiveFieldReader->encoding == COLUMN_ENCODING__KIND__DICTIONARY
+					if (subfield->kind
+							== FIELD_TYPE__KIND__STRING&& primitiveFieldReader->encoding == COLUMN_ENCODING__KIND__DICTIONARY
 							&& dataStreamIterator != DATA_STREAM)
 					{
 						continue;
@@ -801,6 +802,12 @@ int FieldReaderFree(FieldReader* reader)
 	if (reader->fieldReader == NULL)
 	{
 		return 0;
+	}
+
+	if (reader->rowIndex)
+	{
+		row_index__free_unpacked(reader->rowIndex, NULL);
+		reader->rowIndex = NULL;
 	}
 
 	switch (reader->kind)
