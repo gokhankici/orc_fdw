@@ -384,8 +384,13 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
 	FieldReader *recordReader = execState->recordReader;
 	Footer* footer = execState->footer;
 	int result = 0;
+	MemoryContext oldContext = CurrentMemoryContext;
+
+	MemoryContextSwitchTo(execState->orcContext);
 
 	result = FieldReaderAllocate(recordReader, footer, columns);
+
+	MemoryContextSwitchTo(oldContext);
 
 	if (result)
 	{
@@ -941,7 +946,6 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 
 		columnList = lappend(columnList, column);
 	}
-
 
 	/* setup foreign scan plan node */
 	// TODO is giving an empty expression list ok?

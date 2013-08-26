@@ -296,7 +296,9 @@ OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo)
 	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
 	{
 		subfield = structReader->fields[iterator];
-		if (subfield->required)
+
+		/* restrictions for complex types (like lists) are skipped */
+		if (subfield->required && !IsComplexType(subfield->kind))
 		{
 			rowIndex = subfield->rowIndex;
 			if (strideNo > rowIndex->n_entry)
