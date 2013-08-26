@@ -327,12 +327,13 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 			listItemReader->kind = types[listItemReader->orcColumnNo]->kind;
 			listItemReader->rowIndex = NULL;
 
-			listItemReader->psqlVariable = alloc(sizeof(Var));
-			memset(listItemReader->psqlVariable, 0, sizeof(Var));
-			listItemReader->psqlVariable->vartype = get_element_type(field->psqlVariable->vartype);
-
-			if (field->required)
+			if (listItemReader->required)
 			{
+				listItemReader->psqlVariable = alloc(sizeof(Var));
+				memset(listItemReader->psqlVariable, 0, sizeof(Var));
+				listItemReader->psqlVariable->vartype = get_element_type(
+						field->psqlVariable->vartype);
+
 				typesMatch = MatchOrcWithPSQL(listItemReader->kind, OrcGetPSQLType(listItemReader));
 				if (listItemReader->psqlVariable->vartype == InvalidOid || !typesMatch)
 				{
@@ -340,6 +341,10 @@ static int StructFieldReaderAllocate(StructFieldReader* reader, Footer* footer, 
 							"Error while reading column %d: ORC and PSQL types do not match, ORC type is %s[]",
 							field->orcColumnNo, GetTypeKindName(listItemReader->kind));
 				}
+			}
+			else
+			{
+				listItemReader->psqlVariable = NULL;
 			}
 
 			if (IsComplexType(listItemReader->kind))
