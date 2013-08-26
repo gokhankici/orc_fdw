@@ -174,7 +174,7 @@ FileBufferRead(FileBuffer *fileBuffer, int *length)
 	if (*length > fileBuffer->length - fileBuffer->position)
 	{
 		result = FileBufferFill(fileBuffer);
-		if (result < 0)
+		if (result <= 0)
 		{
 			return NULL;
 		}
@@ -253,6 +253,11 @@ FileBufferReadRemaining(FileBuffer *fileBuffer, char **data, int *dataLength)
 {
 	int remainingLength = FileBufferBytesLeft(fileBuffer);
 
+	if (remainingLength == 0)
+	{
+		return 0;
+	}
+
 	if (remainingLength <= fileBuffer->bufferSize)
 	{
 		/* try to fill the buffer if necessary */
@@ -267,7 +272,7 @@ FileBufferReadRemaining(FileBuffer *fileBuffer, char **data, int *dataLength)
 		fileBuffer->bufferSize = remainingLength;
 
 		/* fill the new buffer */
-		if (FileBufferFill(fileBuffer))
+		if (FileBufferFill(fileBuffer) != remainingLength)
 		{
 			return -1;
 		}
