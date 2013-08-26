@@ -24,6 +24,7 @@
 #include "orc.pb-c.h"
 #include "recordReader.h"
 
+#define ENABLE_ROW_SKIPPING 1
 
 /* Defines for valid option names and default values */
 #define OPTION_NAME_FILENAME "filename"

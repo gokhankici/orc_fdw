@@ -544,7 +544,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 
 		/* check if indices are defined in the file */
-		if (footer->rowindexstride > 0
+		if (ENABLE_ROW_SKIPPING && footer->rowindexstride > 0
 				&& execState->currentLineNumber % footer->rowindexstride == 0)
 		{
 			totalStrides = currentStripe->numberofrows / footer->rowindexstride
@@ -570,6 +570,8 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 			/* if we have skipped some strides, we can jump to that stride or to a new stripe */
 			if (noOfSkippedStride > 0)
 			{
+				elog(WARNING, "%d row chunks are skipped", noOfSkippedStride);
+
 				execState->currentLineNumber += noOfSkippedStride * footer->rowindexstride;
 
 				if (execState->currentLineNumber >= currentStripe->numberofrows)
@@ -579,7 +581,6 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 				}
 				else
 				{
-//					elog(WARNING, "reading from stride %d/%d", currentIndexStride,execState->nextStripeNumber);
 					FieldReaderSeek(execState->recordReader, currentIndexStride);
 				}
 			}

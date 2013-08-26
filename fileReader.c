@@ -1,6 +1,7 @@
 #include "postgres.h"
 #include "catalog/pg_type.h"
 
+#include "orc_fdw.h"
 #include "orc.pb-c.h"
 #include "orcUtil.h"
 #include "fileReader.h"
@@ -420,40 +421,13 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 	/* read the row index information from the file for the required columns */
 	while (streamNo < stripeFooter->n_streams && stream->kind == STREAM__KIND__ROW_INDEX)
 	{
-		subField = structReader->fields[streamNo - 1];
-
-		if (subField->required)
+		if (ENABLE_ROW_SKIPPING)
 		{
-			/* if row is required, read its index information */
-			if (subField->rowIndex)
+			subField = structReader->fields[streamNo - 1];
+
+			if (subField->required)
 			{
-				row_index__free_unpacked(subField->rowIndex, NULL);
-				subField->rowIndex = NULL;
-			}
-
-			indexStream = FileStreamInit(file, currentIndexOffset,
-					currentIndexOffset + stream->length,
-					DEFAULT_ROW_INDEX_SIZE, parameters->compressionKind);
-			FileStreamReadRemaining(indexStream, &indexBuffer, &indexBufferLength);
-
-			subField->rowIndex = row_index__unpack(NULL, indexBufferLength, (uint8_t*) indexBuffer);
-			if (!subField->rowIndex)
-			{
-				LogError("Error while unpacking row index message");
-				return -1;
-			}
-
-			FileStreamFree(indexStream);
-
-			/* if column type is list, also read the column reader */
-			if (subField->kind == FIELD_TYPE__KIND__LIST)
-			{
-				// TODO remove this redundancy
-				subField = &((ListFieldReader*) subField->fieldReader)->itemReader;
-				currentIndexOffset += stream->length;
-				streamNo++;
-				stream = stripeFooter->streams[streamNo];
-
+				/* if row is required, read its index information */
 				if (subField->rowIndex)
 				{
 					row_index__free_unpacked(subField->rowIndex, NULL);
@@ -475,6 +449,37 @@ int FieldReaderInit(FieldReader* fieldReader, FILE* file, StripeInformation* str
 
 				FileStreamFree(indexStream);
 
+				/* if column type is list, also read the column reader */
+				if (subField->kind == FIELD_TYPE__KIND__LIST)
+				{
+					// TODO remove this redundancy
+					subField = &((ListFieldReader*) subField->fieldReader)->itemReader;
+					currentIndexOffset += stream->length;
+					streamNo++;
+					stream = stripeFooter->streams[streamNo];
+
+					if (subField->rowIndex)
+					{
+						row_index__free_unpacked(subField->rowIndex, NULL);
+						subField->rowIndex = NULL;
+					}
+
+					indexStream = FileStreamInit(file, currentIndexOffset,
+							currentIndexOffset + stream->length,
+							DEFAULT_ROW_INDEX_SIZE, parameters->compressionKind);
+					FileStreamReadRemaining(indexStream, &indexBuffer, &indexBufferLength);
+
+					subField->rowIndex = row_index__unpack(NULL, indexBufferLength,
+							(uint8_t*) indexBuffer);
+					if (!subField->rowIndex)
+					{
+						LogError("Error while unpacking row index message");
+						return -1;
+					}
+
+					FileStreamFree(indexStream);
+
+				}
 			}
 		}
 
