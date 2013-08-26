@@ -25,7 +25,7 @@ typedef struct
 typedef struct
 {
 	/* Input stream for reading from the file */
-	FILE* file;
+	FILE *file;
 
 	/* offset of the next unread byte in the file */
 	long offset;
@@ -40,13 +40,13 @@ typedef struct
 	/* allocated buffer size */
 	int bufferSize;
 	/* buffer to store the file data */
-	char* buffer;
+	char *buffer;
 } FileBuffer;
 
 typedef struct
 {
 	/* stream for decompression */
-	FileBuffer* fileBuffer;
+	FileBuffer *fileBuffer;
 
 	/* block size used for compression */
 	int bufferSize;
@@ -67,7 +67,7 @@ typedef struct
 	char isNotCompressed;
 
 	/* this is for reading bytes from cross boundries */
-	char* tempBuffer;
+	char *tempBuffer;
 	int tempBufferSize;
 
 	/* starting offset of the whole data in the file, this is changed when iterated to the next stripe */
@@ -80,19 +80,18 @@ typedef struct
 	 * Memory is allocated only once for this structure.
 	 * This is used for storing the data pointer when isNotCompressed == 1.
 	 */
-	char* allocatedMemory;
+	char *allocatedMemory;
 } FileStream;
 
 /*
  * Methods for using a file stream.
  */
-FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize,
-		CompressionKind kind);
-int FileStreamFree(FileStream*);
-char* FileStreamRead(FileStream*, int *length);
-int FileStreamReadByte(FileStream* stream, char* value);
-int FileStreamReadRemaining(FileStream*, char** data, int* dataLength);
-void FileStreamSkip(FileStream* stream, OrcStack* stack);
-int FileStreamEOF(FileStream* fileStream);
+FileStream * FileStreamInit(FILE *file, long offset, long limit, int bufferSize, CompressionKind kind);
+int FileStreamFree(FileStream *fileStream);
+char * FileStreamRead(FileStream *fileStream, int *length);
+int FileStreamReadByte(FileStream *fileStream, char *value);
+int FileStreamReadRemaining(FileStream *fileStream, char **data, int *dataLength);
+void FileStreamSkip(FileStream *fileStream, OrcStack *stack);
+int FileStreamEOF(FileStream *fileStream);
 
 #endif /* INPUTSTREAM_H_ */

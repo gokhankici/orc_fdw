@@ -21,10 +21,12 @@
  *
  * @return NULL for failure, non-NULL for success
  */
-static FileBuffer* FileBufferInit(FILE* file, long offset, long limit, int bufferSize)
+static FileBuffer *
+FileBufferInit(FILE *file, long offset, long limit, int bufferSize)
 {
-	FileBuffer* fileBuffer = alloc(sizeof(FileBuffer));
+	FileBuffer *fileBuffer = alloc(sizeof(FileBuffer));
 	int result = 0;
+
 	fileBuffer->file = file;
 	if (fileBuffer->file == NULL)
 	{
@@ -63,7 +65,8 @@ static FileBuffer* FileBufferInit(FILE* file, long offset, long limit, int buffe
  *
  * @return 0 for success, -1 for failure
  */
-static int FileBufferFree(FileBuffer* fileBuffer)
+static int
+FileBufferFree(FileBuffer *fileBuffer)
 {
 	if (fileBuffer == NULL)
 	{
@@ -88,9 +91,10 @@ static int FileBufferFree(FileBuffer* fileBuffer)
  *
  * @return no of bytes read from the file when the buffer is filled. -1 for failure
  */
-static int FileBufferFill(FileBuffer* fileBuffer)
+static int
+FileBufferFill(FileBuffer *fileBuffer)
 {
-	int bytesRead = 0;
+	int byteCount = 0;
 	int result = 0;
 
 	if (fileBuffer == NULL)
@@ -113,15 +117,14 @@ static int FileBufferFill(FileBuffer* fileBuffer)
 		fileBuffer->position = 0;
 	}
 
-	bytesRead =
-	Min(fileBuffer->limit - fileBuffer->offset, fileBuffer->bufferSize - fileBuffer->length);
+	byteCount = Min(fileBuffer->limit - fileBuffer->offset, fileBuffer->bufferSize - fileBuffer->length);
 
-	if (bytesRead < 0)
+	if (byteCount < 0)
 	{
 		/* this shouldn't happen */
 		return -1;
 	}
-	else if (bytesRead == 0)
+	else if (byteCount == 0)
 	{
 		/* buffer is already filled */
 		return 0;
@@ -133,18 +136,18 @@ static int FileBufferFill(FileBuffer* fileBuffer)
 		fseek(fileBuffer->file, fileBuffer->offset, SEEK_SET);
 	}
 
-	result = fread(fileBuffer->buffer + fileBuffer->length, 1, bytesRead, fileBuffer->file);
+	result = fread(fileBuffer->buffer + fileBuffer->length, 1, byteCount, fileBuffer->file);
 
-	if (result != bytesRead)
+	if (result != byteCount)
 	{
 		LogError("Error while reading file\n");
 		return -1;
 	}
 
-	fileBuffer->length += bytesRead;
-	fileBuffer->offset += bytesRead;
+	fileBuffer->length += byteCount;
+	fileBuffer->offset += byteCount;
 
-	return bytesRead;
+	return byteCount;
 }
 
 /**
@@ -157,9 +160,10 @@ static int FileBufferFill(FileBuffer* fileBuffer)
  *
  * @return pointer to the data in the stream buffer
  */
-static char* FileBufferRead(FileBuffer* fileBuffer, int *length)
+static char *
+FileBufferRead(FileBuffer *fileBuffer, int *length)
 {
-	char* data = NULL;
+	char *data = NULL;
 	int result = 0;
 
 	if (fileBuffer == NULL)
@@ -196,7 +200,8 @@ static char* FileBufferRead(FileBuffer* fileBuffer, int *length)
  *
  * @return 0 for success, -1 for failure
  */
-static int FileBufferReadByte(FileBuffer* fileBuffer, char *value)
+static int
+FileBufferReadByte(FileBuffer *fileBuffer, char *value)
 {
 	int result = 0;
 
@@ -228,7 +233,8 @@ static int FileBufferReadByte(FileBuffer* fileBuffer, char *value)
  *
  * @return no of bytes left unread in the stream
  */
-static long FileBufferBytesLeft(FileBuffer* fileBuffer)
+static long
+FileBufferBytesLeft(FileBuffer *fileBuffer)
 {
 	return (fileBuffer->limit - fileBuffer->offset) + (fileBuffer->length - fileBuffer->position);
 }
@@ -242,7 +248,8 @@ static long FileBufferBytesLeft(FileBuffer* fileBuffer)
  *
  * @return 0 for success, -1 for failure
  */
-static int FileBufferReadRemaining(FileBuffer* fileBuffer, char** data, int* dataLength)
+static int
+FileBufferReadRemaining(FileBuffer *fileBuffer, char **data, int *dataLength)
 {
 	int remainingLength = FileBufferBytesLeft(fileBuffer);
 
@@ -273,9 +280,10 @@ static int FileBufferReadRemaining(FileBuffer* fileBuffer, char** data, int* dat
 }
 
 /* skip to the absolute offset given as the parameter */
-static void FileBufferSkip(FileBuffer* fileBuffer, long offset)
+static void
+FileBufferSkip(FileBuffer *fileBuffer, long offset)
 {
-	if (fileBuffer->offset - fileBuffer->length <= offset && fileBuffer->offset > offset)
+	if ((fileBuffer->offset - fileBuffer->length) <= offset && fileBuffer->offset > offset)
 	{
 		/* if offset is reachable just change the position */
 		fileBuffer->position = fileBuffer->length - (fileBuffer->offset - offset);
@@ -301,7 +309,8 @@ static void FileBufferSkip(FileBuffer* fileBuffer, long offset)
  *
  * @return NULL for failure, non-NULL for success
  */
-FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize,
+FileStream *
+FileStreamInit(FILE *file, long offset, long limit, int bufferSize,
 		CompressionKind kind)
 {
 	FileStream *stream = alloc(sizeof(FileStream));
@@ -352,7 +361,8 @@ FileStream* FileStreamInit(FILE* file, long offset, long limit, int bufferSize,
  *
  * @return 0 for success, -1 for failure
  */
-int FileStreamFree(FileStream* stream)
+int
+FileStreamFree(FileStream *stream)
 {
 	if (stream == NULL)
 	{
@@ -383,16 +393,15 @@ int FileStreamFree(FileStream* stream)
  *
  * @return 0 for success, -1 for failure
  */
-static int ReadNextCompressedBlock(FileStream* stream)
+static int
+ReadNextCompressedBlock(FileStream *stream)
 {
 	char *header = NULL;
 	int headerLength = COMPRESSED_HEADER_SIZE;
-	char *compressed = NULL;
 	int bufferSize = stream->bufferSize;
 	char isNotCompressed = 0;
 	int chunkLength = 0;
 	int result = 0;
-	size_t snappyUncompressedSize = 0;
 
 	/*
 	 * Since fileBuffer->offset gives the offset of the next byte to read,
@@ -409,8 +418,8 @@ static int ReadNextCompressedBlock(FileStream* stream)
 	}
 
 	/* first 3 bytes are the chunk contains the chunk length, last bit is for "original" */
-	chunkLength = ((0xff & header[2]) << 15) | ((0xff & header[1]) << 7)
-			| ((0xff & header[0]) >> 1);
+	chunkLength = ((0xff & header[2]) << 15) | ((0xff & header[1]) << 7) |
+			((0xff & header[0]) >> 1);
 
 	if (chunkLength > bufferSize)
 	{
@@ -443,6 +452,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 	}
 	else
 	{
+		char *compressedBuffer = NULL;
 		stream->isNotCompressed = 0;
 
 		/**
@@ -455,9 +465,9 @@ static int ReadNextCompressedBlock(FileStream* stream)
 		stream->length = bufferSize;
 
 		result = chunkLength;
-		compressed = FileBufferRead(stream->fileBuffer, &chunkLength);
+		compressedBuffer = FileBufferRead(stream->fileBuffer, &chunkLength);
 
-		if (compressed == NULL || result != chunkLength)
+		if (compressedBuffer == NULL || result != chunkLength)
 		{
 			LogError("chunk of given length couldn't read from the file\n");
 			return -1;
@@ -466,7 +476,8 @@ static int ReadNextCompressedBlock(FileStream* stream)
 		switch (stream->compressionKind)
 		{
 		case COMPRESSION_KIND__ZLIB:
-			result = InflateZLIB((uint8_t*) compressed, chunkLength, (uint8_t*) stream->data,
+		{
+			result = InflateZLIB((uint8_t*) compressedBuffer, chunkLength, (uint8_t*) stream->data,
 					&stream->length);
 
 			if (result != Z_OK)
@@ -476,8 +487,11 @@ static int ReadNextCompressedBlock(FileStream* stream)
 			}
 
 			break;
+		}
 		case COMPRESSION_KIND__SNAPPY:
-			result = snappy_uncompressed_length((const char*) compressed, (size_t) chunkLength,
+		{
+			size_t snappyUncompressedSize = 0;
+			result = snappy_uncompressed_length((const char*) compressedBuffer, (size_t) chunkLength,
 					&snappyUncompressedSize);
 
 			if (result != 1)
@@ -495,7 +509,7 @@ static int ReadNextCompressedBlock(FileStream* stream)
 				return -1;
 			}
 
-			result = snappy_uncompress((const char*) compressed, (size_t) chunkLength,
+			result = snappy_uncompress((const char*) compressedBuffer, (size_t) chunkLength,
 					(char*) stream->data);
 
 			if (result)
@@ -505,10 +519,13 @@ static int ReadNextCompressedBlock(FileStream* stream)
 			}
 
 			break;
+		}
 		default:
+		{
 			/* other compression kinds are not supported */
 			LogError2("Compression kind is unsupported. ID: %d", stream->compressionKind);
 			return -1;
+		}
 		}
 	}
 	return 0;
@@ -524,12 +541,12 @@ static int ReadNextCompressedBlock(FileStream* stream)
  *
  * @return pointer to the data in the stream buffer
  */
-char* FileStreamRead(FileStream* stream, int *length)
+char *
+FileStreamRead(FileStream *stream, int *length)
 {
 	int requestedLength = *length;
+	char *data = NULL;
 	int result = 0;
-	char* data = NULL;
-	int unreadByteSize = 0;
 
 	if (stream->compressionKind == COMPRESSION_KIND__NONE)
 	{
@@ -555,8 +572,9 @@ char* FileStreamRead(FileStream* stream, int *length)
 	}
 	else
 	{
-		/* use temp buffer to return the requested bytes */
+		int unreadByteCount = 0;
 
+		/* use temp buffer to return the requested bytes */
 		if (stream->tempBufferSize < requestedLength)
 		{
 			stream->tempBuffer = reAllocateMemory(stream->tempBuffer,requestedLength);
@@ -564,8 +582,8 @@ char* FileStreamRead(FileStream* stream, int *length)
 		}
 
 		/* copy unread bytes from the data buffer */
-		unreadByteSize = stream->length - stream->position;
-		memcpy(stream->tempBuffer, stream->data + stream->position, unreadByteSize);
+		unreadByteCount = stream->length - stream->position;
+		memcpy(stream->tempBuffer, stream->data + stream->position, unreadByteCount);
 
 		result = ReadNextCompressedBlock(stream);
 
@@ -575,14 +593,14 @@ char* FileStreamRead(FileStream* stream, int *length)
 			return NULL;
 		}
 
-		if (stream->length < requestedLength - unreadByteSize)
+		if (stream->length < requestedLength - unreadByteCount)
 		{
 			LogError("Requested data size exceeds compression block size\n");
 			return NULL;
 		}
 
-		memcpy(stream->tempBuffer + unreadByteSize, stream->data, requestedLength - unreadByteSize);
-		stream->position += requestedLength - unreadByteSize;
+		memcpy(stream->tempBuffer + unreadByteCount, stream->data, requestedLength - unreadByteCount);
+		stream->position += requestedLength - unreadByteCount;
 
 		data = stream->tempBuffer;
 	}
@@ -598,7 +616,8 @@ char* FileStreamRead(FileStream* stream, int *length)
  *
  * @return 0 for success, -1 for failure
  */
-int FileStreamReadByte(FileStream* stream, char* value)
+int
+FileStreamReadByte(FileStream *stream, char *value)
 {
 	int result = 0;
 
@@ -608,7 +627,7 @@ int FileStreamReadByte(FileStream* stream, char* value)
 		return FileBufferReadByte(stream->fileBuffer, value);
 	}
 
-	if (stream->length == 0 || stream->position == stream->length)
+	if (stream->length == 0 || (stream->position == stream->length))
 	{
 		result = ReadNextCompressedBlock(stream);
 
@@ -640,10 +659,10 @@ int FileStreamReadByte(FileStream* stream, char* value)
  *
  * @return 0 for success, -1 for failure
  */
-int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
+int
+FileStreamReadRemaining(FileStream *stream, char **data, int *dataLength)
 {
 	int result = 0;
-	int tempBufferPosition = 0;
 
 	if (stream->compressionKind == COMPRESSION_KIND__NONE)
 	{
@@ -651,7 +670,7 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 		return FileBufferReadRemaining(stream->fileBuffer, data, dataLength);
 	}
 
-	if (stream->length == 0 || stream->position == stream->length)
+	if (stream->length == 0 || (stream->position == stream->length))
 	{
 		/* if not any bytes is read from the stream before, init it first */
 		result = ReadNextCompressedBlock(stream);
@@ -664,6 +683,7 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
 
 	if (FileBufferBytesLeft(stream->fileBuffer))
 	{
+		int tempBufferPosition = 0;
 		stream->tempBufferSize = stream->bufferSize * 2;
 		stream->tempBuffer = reAllocateMemory(stream->tempBuffer, stream->tempBufferSize);
 
@@ -711,10 +731,11 @@ int FileStreamReadRemaining(FileStream* stream, char** data, int* dataLength)
  *
  * @return 1 if file is ended, 0 otherwise
  */
-int FileStreamEOF(FileStream* fileStream)
+int
+FileStreamEOF(FileStream *fileStream)
 {
-	return fileStream->position == fileStream->length
-			&& FileBufferBytesLeft(fileStream->fileBuffer) == 0;
+	return fileStream->position == fileStream->length &&
+			FileBufferBytesLeft(fileStream->fileBuffer) == 0;
 }
 
 /*
@@ -723,10 +744,10 @@ int FileStreamEOF(FileStream* fileStream)
  * @param stream file stream to skip
  * @param stack contains the positions in the streams and the runs
  */
-void FileStreamSkip(FileStream* stream, OrcStack* stack)
+void
+FileStreamSkip(FileStream *stream, OrcStack *stack)
 {
 	long *fileOffset = NULL;
-	long *blockOffset = NULL;
 
 	fileOffset = OrcStackPop(stack);
 
@@ -745,7 +766,7 @@ void FileStreamSkip(FileStream* stream, OrcStack* stack)
 
 	if (stream->compressionKind != COMPRESSION_KIND__NONE)
 	{
-		blockOffset = OrcStackPop(stack);
+		long *blockOffset = OrcStackPop(stack);
 
 		if (!blockOffset)
 		{

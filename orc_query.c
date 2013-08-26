@@ -19,13 +19,14 @@
 #include "utils/numeric.h"
 #include "utils/timestamp.h"
 
-static Expr* OrcFindArgumentOfType(List *argumentList, NodeTag argumentType);
+static Expr * OrcFindArgumentOfType(List *argumentList, NodeTag argumentType);
 static OrcQueryOperator OrcGetQueryOperator(const char *operatorName);
-static Node* BuildBaseConstraint(Var* variable);
-static OpExpr* MakeOpExpression(Var *variable, int16 strategyNumber);
+static Node * BuildBaseConstraint(Var *variable);
+static OpExpr * MakeOpExpression(Var *variable, int16 strategyNumber);
 static Oid GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumber);
 static void UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValue);
-static int OrcGetStrideStatistics(Var* variable, RowIndexEntry* entry, Datum* min, Datum* max);
+static int OrcGetStrideStatistics(Var *variable, RowIndexEntry *entry, Datum *min, Datum *max);
+
 /*
  * ApplicableOpExpressionList walks over all filter clauses that relate to this
  * foreign table, and chooses applicable clauses that we know we can translate
@@ -109,15 +110,15 @@ ApplicableOpExpressionList(RelOptInfo *baserel)
  * MongoOperatorName takes in the given PostgreSQL comparison operator name, and
  * returns its equivalent in MongoDB.
  */
-static OrcQueryOperator OrcGetQueryOperator(const char *operatorName)
+static OrcQueryOperator
+OrcGetQueryOperator(const char *operatorName)
 {
 	OrcQueryOperator orcOperatorName = -1;
-
+	int32 nameIndex = 0;
 	const int32 nameCount = 6;
 	static const char *nameMappings[] =
 	{ "=", "<", ">", "<=", ">=", "<>" };
 
-	int32 nameIndex = 0;
 
 	for (nameIndex = 0; nameIndex < nameCount; nameIndex++)
 	{
@@ -136,7 +137,8 @@ static OrcQueryOperator OrcGetQueryOperator(const char *operatorName)
  * FindArgumentOfType walks over the given argument list, looks for an argument
  * with the given type, and returns the argument if it is found.
  */
-static Expr* OrcFindArgumentOfType(List *argumentList, NodeTag argumentType)
+static Expr *
+OrcFindArgumentOfType(List *argumentList, NodeTag argumentType)
 {
 	Expr *foundArgument = NULL;
 	ListCell *argumentCell = NULL;
@@ -232,7 +234,8 @@ MakeOpExpression(Var *variable, int16 strategyNumber)
 }
 
 /* Returns operator oid for the given type, access method, and strategy number. */
-static Oid GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumber)
+static Oid
+GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumber)
 {
 	/* Get default operator class from pg_opclass */
 	Oid operatorClassId = GetDefaultOpClass(typeId, accessMethodId);
@@ -245,7 +248,8 @@ static Oid GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumbe
 }
 
 /* Updates the base constraint with the given min/max values. */
-static void UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValue)
+static void
+UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValue)
 {
 	BoolExpr *andExpr = (BoolExpr *) baseConstraint;
 	Node *lessThanExpr = (Node *) linitial(andExpr->args);
@@ -279,10 +283,10 @@ static void UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValu
  * @param rowReader field reader for the whole column
  * @param strideNo
  */
-List*
+List *
 OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo)
 {
-	List *strideRestrictions = NIL;
+	List *strideRestrictionList = NIL;
 	StructFieldReader* structReader = (StructFieldReader*) rowReader->fieldReader;
 	FieldReader* subfield = NULL;
 	RowIndex* rowIndex = NULL;
@@ -290,12 +294,12 @@ OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo)
 	Node* baseRestriction = NULL;
 	Datum minValue = 0;
 	Datum maxValue = 0;
-	int iterator = 0;
+	int subfieldIndex = 0;
 	int hasStatistics = 0;
 
-	for (iterator = 0; iterator < structReader->noOfFields; ++iterator)
+	for (subfieldIndex = 0; subfieldIndex < structReader->noOfFields; ++subfieldIndex)
 	{
-		subfield = structReader->fields[iterator];
+		subfield = structReader->fields[subfieldIndex];
 
 		/* restrictions for complex types (like lists) are skipped */
 		if (subfield->required && !IsComplexType(subfield->kind))
@@ -316,13 +320,13 @@ OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo)
 			if (hasStatistics)
 			{
 				UpdateConstraint(baseRestriction, minValue, maxValue);
-				strideRestrictions = lappend(strideRestrictions, baseRestriction);
+				strideRestrictionList = lappend(strideRestrictionList, baseRestriction);
 			}
 
 		}
 	}
 
-	return strideRestrictions;
+	return strideRestrictionList;
 }
 
 /*
@@ -330,7 +334,8 @@ OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo)
  *
  * @return 1 for success, 0 when min/max value cannot be obtained
  */
-static int OrcGetStrideStatistics(Var* variable, RowIndexEntry* entry, Datum* min, Datum* max)
+static int
+OrcGetStrideStatistics(Var *variable, RowIndexEntry *entry, Datum *min, Datum *max)
 {
 	ColumnStatistics* statistics = entry->statistics;
 

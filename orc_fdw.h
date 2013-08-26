@@ -24,6 +24,7 @@
 #include "orc.pb-c.h"
 #include "recordReader.h"
 
+/* when enabled, index data will also be read from the file and unnecessary rows will be skipped */
 #define ENABLE_ROW_SKIPPING 1
 
 /* Defines for valid option names and default values */
@@ -77,33 +78,15 @@ typedef struct OrcFdwExecState
 	PostScript *postScript;
 	Footer *footer;
 	StripeFooter *stripeFooter;
-	RowIndex** rowIndices;
 	CompressionParameters compressionParameters;
-	FieldReader* recordReader;
+	FieldReader *recordReader;
 	MemoryContext orcContext;
-	List* opExpressionList;
+	List *queryRestrictionList;
 
 	uint32 nextStripeNumber;
 	StripeInformation *currentStripeInfo;
 	uint32 currentLineNumber;
 } OrcFdwExecState;
-
-
-/*
- * ColumnMapping reprents a hash table entry that maps a column name to column
- * related information. We construct these hash table entries to speed up the
- * conversion from JSON documents to PostgreSQL tuples; and each hash entry maps
- * the column name to the column's tuple index and its type-related information.
- */
-typedef struct ColumnMapping
-{
-	char columnName[NAMEDATALEN];
-	uint32 columnIndex;
-	Oid columnTypeId;
-	int32 columnTypeMod;
-	Oid columnArrayTypeId;
-
-} ColumnMapping;
 
 
 /* Function declarations for foreign data wrapper */

@@ -76,13 +76,12 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
 /**
  * Helper functions
  */
-static void OrcGetNextStripe(OrcFdwExecState* execState);
-static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls,
+static void OrcGetNextStripe(OrcFdwExecState *execState);
+static void FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
 		MemoryContext current, MemoryContext orcContext);
 
 /* Declarations for dynamic loading */
-PG_MODULE_MAGIC
-;
+PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(orc_fdw_handler);
 PG_FUNCTION_INFO_V1(orc_fdw_validator);
@@ -91,7 +90,8 @@ PG_FUNCTION_INFO_V1(orc_fdw_validator);
  * orc_fdw_handler creates and returns a struct with pointers to foreign table
  * callback functions.
  */
-Datum orc_fdw_handler(PG_FUNCTION_ARGS)
+Datum
+orc_fdw_handler(PG_FUNCTION_ARGS)
 {
 	FdwRoutine *fdwRoutine = makeNode(FdwRoutine);
 
@@ -115,7 +115,8 @@ Datum orc_fdw_handler(PG_FUNCTION_ARGS)
  * filename option is required by the foreign table, so we error out if it is
  * not provided.
  */
-Datum orc_fdw_validator(PG_FUNCTION_ARGS)
+Datum
+orc_fdw_validator(PG_FUNCTION_ARGS)
 {
 	Datum optionArray = PG_GETARG_DATUM(0);
 	Oid optionContextId = PG_GETARG_OID(1);
@@ -174,7 +175,8 @@ Datum orc_fdw_validator(PG_FUNCTION_ARGS)
  * and concatenates these option names in a comma separated string. The function
  * is unchanged from mongo_fdw.
  */
-static StringInfo OptionNamesString(Oid currentContextId)
+static StringInfo
+OptionNamesString(Oid currentContextId)
 {
 	StringInfo optionNamesString = makeStringInfo();
 	bool firstOptionAppended = false;
@@ -205,7 +207,8 @@ static StringInfo OptionNamesString(Oid currentContextId)
  * puts its estimate for row count into baserel->rows.
  */
 /* FIXME Use footer here ? */
-static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
+static void
+OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
 {
 	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
 
@@ -222,7 +225,8 @@ static void OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid for
  * table. Currently we only have one possible access path, which simply returns
  * all records in the order they appear in the underlying file.
  */
-static void OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
+static void
+OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
 {
 	Path *foreignScanPath = NULL;
 	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
@@ -302,7 +306,8 @@ OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId, Fo
 }
 
 /* OrcExplainForeignScan produces extra output for the Explain command. */
-static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState)
+static void
+OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState)
 {
 	Oid foreignTableId = RelationGetRelid(scanState->ss.ss_currentRelation);
 	OrcFdwOptions *options = OrcGetOptions(foreignTableId);
@@ -326,12 +331,10 @@ static void OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *exp
  * Iteratres to the next stripe and initializes the record reader.
  * Returns true if there is another stripe.
  */
-static void OrcGetNextStripe(OrcFdwExecState* execState)
+static void
+OrcGetNextStripe(OrcFdwExecState* execState)
 {
 	Footer* footer = execState->footer;
-	StripeInformation* stripeInfo = NULL;
-	StripeFooter* stripeFooter = NULL;
-	MemoryContext oldContext = CurrentMemoryContext;
 	int result = 0;
 
 	if (execState->stripeFooter)
@@ -346,10 +349,11 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 
 	if (execState->nextStripeNumber < footer->n_stripes)
 	{
-		stripeInfo = footer->stripes[execState->nextStripeNumber];
+		StripeInformation *stripeInfo = footer->stripes[execState->nextStripeNumber];
+		MemoryContext oldContext = CurrentMemoryContext;
+		StripeFooter *stripeFooter = NULL;
 
-		stripeFooter = StripeFooterInit(execState->file, stripeInfo,
-				&execState->compressionParameters);
+		stripeFooter = StripeFooterInit(execState->file, stripeInfo, &execState->compressionParameters);
 
 		/* switch to orc context for reading data */
 		MemoryContextSwitchTo(execState->orcContext);
@@ -379,7 +383,8 @@ static void OrcGetNextStripe(OrcFdwExecState* execState)
 
 }
 
-static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
+static void
+OrcInitializeFieldReader(OrcFdwExecState *execState, List *columns)
 {
 	FieldReader *recordReader = execState->recordReader;
 	Footer* footer = execState->footer;
@@ -407,7 +412,8 @@ static void OrcInitializeFieldReader(OrcFdwExecState* execState, List* columns)
  * The function also creates a hash table that maps referenced column names to column index
  * and type information.
  */
-static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
+static void
+OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 {
 	OrcFdwExecState *execState = NULL;
 	ForeignScan *foreignScan = NULL;
@@ -440,7 +446,7 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	execState->stripeFooter = NULL;
 	execState->currentStripeInfo = NULL;
 	execState->file = AllocateFile(execState->filename, "r");
-	execState->opExpressionList = (List *) lsecond(foreignPrivateList);
+	execState->queryRestrictionList = (List *) lsecond(foreignPrivateList);
 
 	if (execState->file == NULL)
 	{
@@ -466,15 +472,12 @@ static void OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	}
 
 	execState->orcContext = AllocSetContextCreate(CurrentMemoryContext, "orc_fdw data context",
-	ALLOCSET_DEFAULT_MINSIZE,
-	ALLOCSET_DEFAULT_INITSIZE,
-	Max(ALLOCSET_DEFAULT_MAXSIZE, postScript->compressionblocksize * 2));
+			ALLOCSET_DEFAULT_MINSIZE,
+			ALLOCSET_DEFAULT_INITSIZE,
+			Max(ALLOCSET_DEFAULT_MAXSIZE, postScript->compressionblocksize * 2));
 
 	execState->footer = footer;
 	execState->recordReader = palloc(sizeof(FieldReader));
-
-	execState->rowIndices = palloc(sizeof(RowIndex*) * footer->types[0]->n_subtypes);
-	memset(execState->rowIndices, 0, sizeof(RowIndex*) * footer->types[0]->n_subtypes);
 
 	OrcInitializeFieldReader(execState, columnList);
 
@@ -491,21 +494,15 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 {
 	OrcFdwExecState *execState = (OrcFdwExecState *) scanState->fdw_state;
 	TupleTableSlot *tupleSlot = scanState->ss.ss_ScanTupleSlot;
-	StripeInformation* currentStripe = execState->currentStripeInfo;
+	StripeInformation *currentStripe = execState->currentStripeInfo;
 	MemoryContext oldContext = CurrentMemoryContext;
-	Footer* footer = execState->footer;
+	Footer *footer = execState->footer;
 
 	TupleDesc tupleDescriptor = tupleSlot->tts_tupleDescriptor;
 	Datum *columnValues = tupleSlot->tts_values;
 	bool *columnNulls = tupleSlot->tts_isnull;
 	int columnCount = tupleDescriptor->natts;
-
-	List* strideRestrictions = NIL;
-	int currentIndexStride = 0;
-	int noOfSkippedStride = 0;
-	bool strideSkipped = false;
-	bool nextStripeIsNeeded = false;
-	int totalStrides = 0;
+	bool nextStripeNeeded = false;
 
 	/* initialize all values for this row to null */
 	memset(columnValues, 0, columnCount * sizeof(Datum));
@@ -528,7 +525,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	 */
 	do
 	{
-		nextStripeIsNeeded = false;
+		nextStripeNeeded = false;
 
 		if (currentStripe == NULL)
 		{
@@ -552,45 +549,56 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		if (ENABLE_ROW_SKIPPING && footer->rowindexstride > 0
 				&& execState->currentLineNumber % footer->rowindexstride == 0)
 		{
-			totalStrides = currentStripe->numberofrows / footer->rowindexstride
-					+ ((currentStripe->numberofrows % footer->rowindexstride) ? 1 : 0);
-			currentIndexStride = execState->currentLineNumber / footer->rowindexstride;
-			noOfSkippedStride = 0;
+			List *strideRestrictionList = NIL;
+			int currentStrideIndex = 0;
+			int skippedStrideCount = 0;
+			bool strideSkipped = false;
+			int totalStrideCount = 0;
+
+			totalStrideCount = currentStripe->numberofrows / footer->rowindexstride;
+			if(currentStripe->numberofrows % footer->rowindexstride)
+			{
+				/* rest is put into another stride */
+				totalStrideCount++;
+			}
+
+			currentStrideIndex = execState->currentLineNumber / footer->rowindexstride;
+			skippedStrideCount = 0;
 
 			/* while the current stride is not needed and there are stride remaining, iterate the strides */
 			do
 			{
-				strideRestrictions = OrcCreateStrideRestrictions(execState->recordReader,
-						currentIndexStride);
-				strideSkipped = predicate_refuted_by(strideRestrictions,
-						execState->opExpressionList);
+				strideRestrictionList = OrcCreateStrideRestrictions(execState->recordReader,
+						currentStrideIndex);
+				strideSkipped = predicate_refuted_by(strideRestrictionList,
+						execState->queryRestrictionList);
 
 				if (strideSkipped)
 				{
-					currentIndexStride++;
-					noOfSkippedStride++;
+					currentStrideIndex++;
+					skippedStrideCount++;
 				}
-			} while (strideSkipped && currentIndexStride < totalStrides);
+			} while (strideSkipped && currentStrideIndex < totalStrideCount);
 
 			/* if we have skipped some strides, we can jump to that stride or to a new stripe */
-			if (noOfSkippedStride > 0)
+			if (skippedStrideCount > 0)
 			{
-				elog(WARNING, "%d row chunks are skipped", noOfSkippedStride);
+				elog(WARNING, "%d row chunks are skipped", skippedStrideCount);
 
-				execState->currentLineNumber += noOfSkippedStride * footer->rowindexstride;
+				execState->currentLineNumber += skippedStrideCount * footer->rowindexstride;
 
 				if (execState->currentLineNumber >= currentStripe->numberofrows)
 				{
 					execState->currentLineNumber = currentStripe->numberofrows;
-					nextStripeIsNeeded = true;
+					nextStripeNeeded = true;
 				}
 				else
 				{
-					FieldReaderSeek(execState->recordReader, currentIndexStride);
+					FieldReaderSeek(execState->recordReader, currentStrideIndex);
 				}
 			}
 		}
-	} while (nextStripeIsNeeded);
+	} while (nextStripeNeeded);
 
 	FillTupleSlot(execState->recordReader, columnValues, columnNulls, oldContext,
 			execState->orcContext);
@@ -602,9 +610,9 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 }
 
 /* OrcReScanForeignScan rescans the foreign table. */
-static void OrcReScanForeignScan(ForeignScanState *scanState)
+static void
+OrcReScanForeignScan(ForeignScanState *scanState)
 {
-//	/* TODO update here to not to read ps/footer again for efficiency */
 	OrcEndForeignScan(scanState);
 	OrcBeginForeignScan(scanState, 0);
 }
@@ -613,7 +621,8 @@ static void OrcReScanForeignScan(ForeignScanState *scanState)
  * OrcEndForeignScan finishes scanning the foreign table, and frees the acquired
  * resources.
  */
-static void OrcEndForeignScan(ForeignScanState *scanState)
+static void
+OrcEndForeignScan(ForeignScanState *scanState)
 {
 	OrcFdwExecState *executionState = (OrcFdwExecState *) scanState->fdw_state;
 
@@ -632,12 +641,6 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 		stripe_footer__free_unpacked(executionState->stripeFooter, NULL);
 		executionState->stripeFooter = NULL;
 	}
-
-//	if (executionState->footer)
-//	{
-//		footer__free_unpacked(executionState->footer, NULL);
-//		executionState->footer = NULL;
-//	}
 
 	if (executionState->postScript)
 	{
@@ -658,15 +661,15 @@ static void OrcEndForeignScan(ForeignScanState *scanState)
 static OrcFdwOptions *
 OrcGetOptions(Oid foreignTableId)
 {
-	OrcFdwOptions *jsonFdwOptions = NULL;
+	OrcFdwOptions *orcFdwOptions = NULL;
 	char *filename = NULL;
 
 	filename = OrcGetOptionValue(foreignTableId, OPTION_NAME_FILENAME);
 
-	jsonFdwOptions = (OrcFdwOptions *) palloc0(sizeof(OrcFdwOptions));
-	jsonFdwOptions->filename = filename;
+	orcFdwOptions = (OrcFdwOptions *) palloc0(sizeof(OrcFdwOptions));
+	orcFdwOptions->filename = filename;
 
-	return jsonFdwOptions;
+	return orcFdwOptions;
 }
 
 /*
@@ -705,7 +708,8 @@ OrcGetOptionValue(Oid foreignTableId, const char *optionName)
 }
 
 /* TupleCount estimates the number of base relation tuples in the given file. */
-static double TupleCount(RelOptInfo *baserel, const char *filename)
+static double
+TupleCount(RelOptInfo *baserel, const char *filename)
 {
 	double tupleCount = 0.0;
 
@@ -747,7 +751,8 @@ static double TupleCount(RelOptInfo *baserel, const char *filename)
 }
 
 /* PageCount calculates and returns the number of pages in a file. */
-static BlockNumber PageCount(const char *filename)
+static BlockNumber
+PageCount(const char *filename)
 {
 	BlockNumber pageCount = 0;
 	struct stat statBuffer;
@@ -828,7 +833,8 @@ ColumnList(RelOptInfo *baserel)
 	return columnList;
 }
 
-static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *columnNulls,
+static void
+FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
 		MemoryContext current, MemoryContext orcContext)
 {
 	FieldReader* fieldReader = NULL;
@@ -865,7 +871,8 @@ static void FillTupleSlot(FieldReader* recordReader, Datum *columnValues, bool *
  * OrcAnalyzeForeignTable sets the total page count and the function pointer
  * used to acquire a random sample of rows from the foreign file.
  */
-static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRowsFunc,
+static bool
+OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRowsFunc,
 		BlockNumber *totalPageCount)
 {
 	Oid foreignTableId = RelationGetRelid(relation);
@@ -909,7 +916,8 @@ static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acq
  * inaccurate, but that's OK. We currently don't use correlation estimates (the
  * planner only pays attention to correlation for index scans).
  */
-static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
+static int
+OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
 		int targetRowCount, double *totalRowCount, double *totalDeadRowCount)
 {
 	int sampleRowCount = 0;
