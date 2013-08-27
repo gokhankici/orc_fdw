@@ -13,7 +13,7 @@ Foreign data wrapper for reading ORC formatted files.
     make
     sudo make install
     ```
-2. Run `make install` in orc\_fdw folder.
+2. Run `sh init.sh` and then `make install` in orc\_fdw folder.
 
 ## Converting To ORC Format
 
