@@ -559,8 +559,8 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 
 		/* check if indices are defined in the file */
-		if (ENABLE_ROW_SKIPPING && footer->rowindexstride > 0
-				&& execState->currentLineNumber % footer->rowindexstride == 0)
+		if (ENABLE_ROW_SKIPPING && footer->rowindexstride > 0 &&
+				execState->currentLineNumber % footer->rowindexstride == 0)
 		{
 			List *strideRestrictionList = NIL;
 			int currentStrideIndex = 0;
@@ -596,8 +596,6 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 			/* if we have skipped some strides, we can jump to that stride or to a new stripe */
 			if (skippedStrideCount > 0)
 			{
-				elog(WARNING, "%d row chunks are skipped", skippedStrideCount);
-
 				execState->currentLineNumber += skippedStrideCount * footer->rowindexstride;
 
 				if (execState->currentLineNumber >= currentStripe->numberofrows)

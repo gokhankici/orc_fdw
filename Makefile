@@ -3,7 +3,6 @@
 MODULE_big = orc_fdw
 OBJS = orc.pb-c.o recordReader.o orcUtil.o fileReader.o snappy.o inputStream.o orc_fdw.o orc_query.o
 SHLIB_LINK = -lz $(shell pkg-config --libs libprotobuf-c)
-
 EXTENSION = orc_fdw
 DATA = orc_fdw--1.0.sql
 
