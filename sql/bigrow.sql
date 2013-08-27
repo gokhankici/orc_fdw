@@ -6,7 +6,7 @@ create foreign table bigrow(
     integer1 INT,
     long1 INT8,
     list1 INT[],
-    float1 FLOAT,
+    float1 FLOAT4,
     double1 FLOAT8,
     string1 VARCHAR,
     list2 VARCHAR[],

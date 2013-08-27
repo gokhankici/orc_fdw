@@ -32,6 +32,7 @@
 
 #define ORC_TUPLE_COST_MULTIPLIER 10
 
+
 /*
  * OrcValidOption keeps an option name and a context. When an option is passed
  * into orc_fdw objects (server and foreign table), we compare this option's

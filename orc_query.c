@@ -27,6 +27,7 @@ static Oid GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumbe
 static void UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValue);
 static int OrcGetStrideStatistics(Var *variable, RowIndexEntry *entry, Datum *min, Datum *max);
 
+
 /*
  * ApplicableOpExpressionList walks over all filter clauses that relate to this
  * foreign table, and chooses applicable clauses that we know we can translate
@@ -106,6 +107,7 @@ ApplicableOpExpressionList(RelOptInfo *baserel)
 	return opExpressionList;
 }
 
+
 /*
  * MongoOperatorName takes in the given PostgreSQL comparison operator name, and
  * returns its equivalent in MongoDB.
@@ -133,6 +135,7 @@ OrcGetQueryOperator(const char *operatorName)
 	return orcOperatorName;
 }
 
+
 /*
  * FindArgumentOfType walks over the given argument list, looks for an argument
  * with the given type, and returns the argument if it is found.
@@ -155,6 +158,7 @@ OrcFindArgumentOfType(List *argumentList, NodeTag argumentType)
 
 	return foundArgument;
 }
+
 
 /*
  * BuildRestrictInfoList builds restrict info list using the selection criteria,
@@ -179,6 +183,7 @@ BuildRestrictInfoList(List *qualList)
 	return restrictInfoList;
 }
 
+
 static Node *
 BuildBaseConstraint(Var* variable)
 {
@@ -195,6 +200,7 @@ BuildBaseConstraint(Var* variable)
 
 	return baseConstraint;
 }
+
 
 static OpExpr *
 MakeOpExpression(Var *variable, int16 strategyNumber)
@@ -233,6 +239,7 @@ MakeOpExpression(Var *variable, int16 strategyNumber)
 	return expression;
 }
 
+
 /* Returns operator oid for the given type, access method, and strategy number. */
 static Oid
 GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumber)
@@ -246,6 +253,7 @@ GetOperatorByType(Oid typeId, Oid accessMethodId, int16 strategyNumber)
 
 	return operatorId;
 }
+
 
 /* Updates the base constraint with the given min/max values. */
 static void
@@ -275,6 +283,7 @@ UpdateConstraint(Node *baseConstraint, Datum minValue, Datum maxValue)
 	minConstant->constbyval = true;
 	maxConstant->constbyval = true;
 }
+
 
 /*
  * Creates a restriction list that contains the minimum and maximum values of the
@@ -329,6 +338,7 @@ OrcCreateStrideRestrictions(FieldReader* rowReader, int strideNo)
 	return strideRestrictionList;
 }
 
+
 /*
  * Reads the min/max value from the row index entry into datum pointers
  *
@@ -341,70 +351,70 @@ OrcGetStrideStatistics(Var *variable, RowIndexEntry *entry, Datum *min, Datum *m
 
 	switch (variable->vartype)
 	{
-	case INT2OID:
-	{
-		*min = Int16GetDatum((short) statistics->intstatistics->minimum);
-		*max = Int16GetDatum((short) statistics->intstatistics->maximum);
-		return 1;
-	}
-	case INT4OID:
-	{
-		*min = Int32GetDatum((int) statistics->intstatistics->minimum);
-		*max = Int32GetDatum((int) statistics->intstatistics->maximum);
-		return 1;
-	}
-	case INT8OID:
-	{
-		*min = Int64GetDatum((int) statistics->intstatistics->minimum);
-		*max = Int64GetDatum((int) statistics->intstatistics->maximum);
-		return 1;
-	}
-	case FLOAT4OID:
-	case FLOAT8OID:
-	{
-		*min = Float8GetDatum((double) statistics->doublestatistics->minimum);
-		*max = Float8GetDatum((double) statistics->doublestatistics->maximum);
-		return 1;
-	}
-	case BPCHAROID:
-	{
-		*min = DirectFunctionCall3(bpcharin, CStringGetDatum(statistics->stringstatistics->minimum),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(variable->vartypmod));
-		*max = DirectFunctionCall3(bpcharin, CStringGetDatum(statistics->stringstatistics->maximum),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(variable->vartypmod));
-		return 1;
-	}
-	case VARCHAROID:
-	{
-		*min =
-		DirectFunctionCall3(varcharin, CStringGetDatum(statistics->stringstatistics->minimum),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(variable->vartypmod));
-		*max =
-		DirectFunctionCall3(varcharin, CStringGetDatum(statistics->stringstatistics->maximum),
-				ObjectIdGetDatum(InvalidOid),
-				Int32GetDatum(variable->vartypmod));
-		return 1;
-	}
-	case TEXTOID:
-	{
-		*min = CStringGetTextDatum(statistics->stringstatistics->minimum);
-		*max = CStringGetTextDatum(statistics->stringstatistics->maximum);
-		return 1;
-	}
-	case DATEOID:
-	{
-		*min = DateADTGetDatum(statistics->datestatistics->minimum - ORC_PSQL_EPOCH_IN_DAYS);
-		*max = DateADTGetDatum(statistics->datestatistics->maximum - ORC_PSQL_EPOCH_IN_DAYS);
-		return 1;
-	}
-	default:
-	{
-		*min = 0;
-		*max = 0;
-		return 0;
-	}
+		case INT2OID:
+		{
+			*min = Int16GetDatum((short) statistics->intstatistics->minimum);
+			*max = Int16GetDatum((short) statistics->intstatistics->maximum);
+			return 1;
+		}
+		case INT4OID:
+		{
+			*min = Int32GetDatum((int) statistics->intstatistics->minimum);
+			*max = Int32GetDatum((int) statistics->intstatistics->maximum);
+			return 1;
+		}
+		case INT8OID:
+		{
+			*min = Int64GetDatum((int) statistics->intstatistics->minimum);
+			*max = Int64GetDatum((int) statistics->intstatistics->maximum);
+			return 1;
+		}
+		case FLOAT4OID:
+		case FLOAT8OID:
+		{
+			*min = Float8GetDatum((double) statistics->doublestatistics->minimum);
+			*max = Float8GetDatum((double) statistics->doublestatistics->maximum);
+			return 1;
+		}
+		case BPCHAROID:
+		{
+			*min = DirectFunctionCall3(bpcharin, CStringGetDatum(statistics->stringstatistics->minimum),
+					ObjectIdGetDatum(InvalidOid),
+					Int32GetDatum(variable->vartypmod));
+			*max = DirectFunctionCall3(bpcharin, CStringGetDatum(statistics->stringstatistics->maximum),
+					ObjectIdGetDatum(InvalidOid),
+					Int32GetDatum(variable->vartypmod));
+			return 1;
+		}
+		case VARCHAROID:
+		{
+			*min =
+			DirectFunctionCall3(varcharin, CStringGetDatum(statistics->stringstatistics->minimum),
+					ObjectIdGetDatum(InvalidOid),
+					Int32GetDatum(variable->vartypmod));
+			*max =
+			DirectFunctionCall3(varcharin, CStringGetDatum(statistics->stringstatistics->maximum),
+					ObjectIdGetDatum(InvalidOid),
+					Int32GetDatum(variable->vartypmod));
+			return 1;
+		}
+		case TEXTOID:
+		{
+			*min = CStringGetTextDatum(statistics->stringstatistics->minimum);
+			*max = CStringGetTextDatum(statistics->stringstatistics->maximum);
+			return 1;
+		}
+		case DATEOID:
+		{
+			*min = DateADTGetDatum(statistics->datestatistics->minimum - ORC_PSQL_EPOCH_IN_DAYS);
+			*max = DateADTGetDatum(statistics->datestatistics->maximum - ORC_PSQL_EPOCH_IN_DAYS);
+			return 1;
+		}
+		default:
+		{
+			*min = 0;
+			*max = 0;
+			return 0;
+		}
 	}
 }

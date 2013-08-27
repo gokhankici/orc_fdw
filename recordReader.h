@@ -37,39 +37,24 @@
 #define ORC_DIFF_POSTGRESQL				473385600L
 #define ORC_PSQL_EPOCH_IN_DAYS			10957
 
+/*
+ * The conversion signed integer to ORC format is as follows:
+ * 0, -1, 1, -2, 2, -3, 3, ......  --> 0, 1, 2, 3, 4, 5, 6, ...
+ * 
+ * So, in ORC even numbers are non-negative and odd numbers are negative.
+ * Functions to convert to/from ORC format from/to regular format are defined below.
+ */
 #define ToUnsignedInteger(x) (uint64_t)( ((x) < 0) ? ( ((uint64_t)-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
 #define ToSignedInteger(x)   ( int64_t)( ((x) % 2) ? (-(int64_t)((x - 1) / 2) - 1) : ((x) / 2) )
 
-#define IsComplexType(type) \
-			  (type == FIELD_TYPE__KIND__LIST \
-			|| type == FIELD_TYPE__KIND__STRUCT \
-			|| type == FIELD_TYPE__KIND__MAP)
+#define IsComplexType(type) (type == FIELD_TYPE__KIND__LIST || type == FIELD_TYPE__KIND__STRUCT || type == FIELD_TYPE__KIND__MAP)
+
 
 typedef enum
 {
 	VARIABLE_LENGTH, RLE
 } EncodingType;
 
-typedef union
-{
-	uint8_t value8;
-	int64_t value64;
-	float floatValue;
-	double doubleValue;
-	char* binary;
-	struct timespec time;
-} FieldValue;
-
-typedef struct
-{
-	union
-	{
-		FieldValue value;
-		FieldValue* list;
-	};
-	int* listItemSizes;
-	char* isItemNull;
-} Field;
 
 typedef struct
 {
@@ -96,6 +81,7 @@ typedef struct
 
 } StreamReader;
 
+
 /**
  * Base structure to represent a field reader.
  * Its fieldreader variable contains the streams of the type.
@@ -115,11 +101,10 @@ typedef struct
 	/* Actual field reader, can be struct, list, or primitive */
 	void* fieldReader;
 
-//	/* psql column information */
-//	int psqlKind;
-//	int columnTypeMod;
+	/* psql column information */
 	Var* psqlVariable;
 } FieldReader;
+
 
 /**
  * Reader for primitive types
@@ -137,6 +122,7 @@ typedef struct
 	char** dictionary;
 } PrimitiveFieldReader;
 
+
 /*
  * Reader for list types.
  */
@@ -146,34 +132,33 @@ typedef struct
 	FieldReader itemReader;
 } ListFieldReader;
 
+
 typedef struct
 {
 	int noOfFields;
 	FieldReader** fields;
 } StructFieldReader;
 
-int StreamReaderFree(StreamReader* streamReader);
-int StreamReaderInit(StreamReader* streamReader, FieldType__Kind streamKind, FILE* file,
-		long offset, long limit, CompressionParameters* parameters);
-void StreamReaderSeek(StreamReader* streamReader, FieldType__Kind fieldType,
-		FieldType__Kind streamKind, OrcStack* stack);
 
-/**
- * Reads one element from the type.
- * The returned value is <0 for error, 1 for null, 0 for not-null value
- */
-int FieldReaderRead(FieldReader* fieldReader, Field* field, int* length);
+int StreamReaderFree(StreamReader *streamReader);
+int StreamReaderInit(StreamReader *streamReader, FieldType__Kind streamKind, FILE *file,
+		long offset, long limit, CompressionParameters *parameters);
+void StreamReaderSeek(StreamReader *streamReader, FieldType__Kind fieldType,
+		FieldType__Kind streamKind, OrcStack *stack);
+
 
 /*
  * Functions to read the column value directly into the native PSQL format
  */
-Datum ReadPrimitiveFieldAsDatum(FieldReader* fieldReader, bool *isNull);
-Datum ReadListFieldAsDatum(FieldReader* fieldReader, bool *isNull);
+Datum ReadPrimitiveFieldAsDatum(FieldReader *fieldReader, bool *isNull);
+Datum ReadListFieldAsDatum(FieldReader *fieldReader, bool *isNull);
+
 
 /**
  * Helper functions to get the kth stream and its type
  */
 FieldType__Kind GetStreamKind(FieldType__Kind type, ColumnEncoding__Kind encoding, int streamIndex);
 int GetStreamCount(FieldType__Kind type, ColumnEncoding__Kind encoding);
+
 
 #endif /* RECORDREADER_H_ */

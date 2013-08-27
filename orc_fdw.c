@@ -2,7 +2,7 @@
  *
  * orc_fdw.c
  *
- * Function definitions for JSON foreign data wrapper.
+ * Function definitions for ORC foreign data wrapper.
  *
  * Copyright (c) 2013, Citus Data, Inc.
  *
@@ -73,8 +73,9 @@ static bool OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acq
 static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *sampleRows,
 		int targetRowCount, double *totalRowCount, double *totalDeadRowCount);
 
+
 /**
- * Helper functions
+ * Helper functions for reading rows from the file
  */
 static void OrcGetNextStripe(OrcFdwExecState *execState);
 static void FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
@@ -85,6 +86,7 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(orc_fdw_handler);
 PG_FUNCTION_INFO_V1(orc_fdw_validator);
+
 
 /*
  * orc_fdw_handler creates and returns a struct with pointers to foreign table
@@ -107,6 +109,7 @@ orc_fdw_handler(PG_FUNCTION_ARGS)
 
 	PG_RETURN_POINTER(fdwRoutine);
 }
+
 
 /*
  * orc_fdw_validator validates options given to one of the following commands:
@@ -149,7 +152,8 @@ orc_fdw_validator(PG_FUNCTION_ARGS)
 			StringInfo optionNamesString = OptionNamesString(optionContextId);
 
 			ereport(ERROR,
-					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME), errmsg("invalid option \"%s\"", optionName), errhint("Valid options in this context are: %s", optionNamesString->data)));
+					(errcode(ERRCODE_FDW_INVALID_OPTION_NAME), errmsg("invalid option \"%s\"", optionName), 
+						errhint("Valid options in this context are: %s", optionNamesString->data)));
 		}
 
 		if (strncmp(optionName, OPTION_NAME_FILENAME, NAMEDATALEN) == 0)
@@ -163,12 +167,14 @@ orc_fdw_validator(PG_FUNCTION_ARGS)
 		if (!filenameFound)
 		{
 			ereport(ERROR,
-					(errcode(ERRCODE_FDW_DYNAMIC_PARAMETER_VALUE_NEEDED), errmsg("filename is required for orc_fdw foreign tables")));
+					(errcode(ERRCODE_FDW_DYNAMIC_PARAMETER_VALUE_NEEDED), 
+						errmsg("filename is required for orc_fdw foreign tables")));
 		}
 	}
 
 	PG_RETURN_VOID() ;
 }
+
 
 /*
  * OptionNamesString finds all options that are valid for the current context,
@@ -202,11 +208,11 @@ OptionNamesString(Oid currentContextId)
 	return optionNamesString;
 }
 
+
 /*
  * OrcGetForeignRelSize obtains relation size estimates for a foreign table and
  * puts its estimate for row count into baserel->rows.
  */
-/* FIXME Use footer here ? */
 static void
 OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
 {
@@ -220,8 +226,9 @@ OrcGetForeignRelSize(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
 	baserel->rows = outputRowCount;
 }
 
+
 /*
- * JsonGetForeignPaths creates possible access paths for a scan on the foreign
+ * OrcGetForeignPaths creates possible access paths for a scan on the foreign
  * table. Currently we only have one possible access path, which simply returns
  * all records in the order they appear in the underlying file.
  */
@@ -257,6 +264,7 @@ OrcGetForeignPaths(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId)
 
 	add_path(baserel, foreignScanPath);
 }
+
 
 /*
  * OrcGetForeignPlan creates a ForeignScan plan node for scanning the foreign
@@ -305,6 +313,7 @@ OrcGetForeignPlan(PlannerInfo *root, RelOptInfo *baserel, Oid foreignTableId, Fo
 	return foreignScan;
 }
 
+
 /* OrcExplainForeignScan produces extra output for the Explain command. */
 static void
 OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState)
@@ -326,6 +335,7 @@ OrcExplainForeignScan(ForeignScanState *scanState, ExplainState *explainState)
 		}
 	}
 }
+
 
 /**
  * Iteratres to the next stripe and initializes the record reader.
@@ -383,6 +393,7 @@ OrcGetNextStripe(OrcFdwExecState* execState)
 
 }
 
+
 static void
 OrcInitializeFieldReader(OrcFdwExecState *execState, List *columns)
 {
@@ -399,12 +410,13 @@ OrcInitializeFieldReader(OrcFdwExecState *execState, List *columns)
 
 	if (result)
 	{
-		elog(ERROR, "Error while allocating initializing record reader\n");
+		elog(ERROR, "Error occurred while allocating initializing record reader\n");
 	}
 
 	/* Use next stripe to initialize record reader */
 	OrcGetNextStripe(execState);
 }
+
 
 /*
  * OrcBeginForeignScan opens the underlying ORC file to read its PostScript and
@@ -483,6 +495,7 @@ OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 
 	scanState->fdw_state = (void *) execState;
 }
+
 
 /*
  * OrcIterateForeignScan reads the next record from the data file, converts it
@@ -609,6 +622,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	return tupleSlot;
 }
 
+
 /* OrcReScanForeignScan rescans the foreign table. */
 static void
 OrcReScanForeignScan(ForeignScanState *scanState)
@@ -616,6 +630,7 @@ OrcReScanForeignScan(ForeignScanState *scanState)
 	OrcEndForeignScan(scanState);
 	OrcBeginForeignScan(scanState, 0);
 }
+
 
 /*
  * OrcEndForeignScan finishes scanning the foreign table, and frees the acquired
@@ -654,6 +669,7 @@ OrcEndForeignScan(ForeignScanState *scanState)
 	}
 }
 
+
 /*
  * OrcGetOptions returns the option values to be used when reading and parsing
  * the orc file.
@@ -671,6 +687,7 @@ OrcGetOptions(Oid foreignTableId)
 
 	return orcFdwOptions;
 }
+
 
 /*
  * OrcGetOptionValue walks over foreign table and foreign server options, and
@@ -706,6 +723,7 @@ OrcGetOptionValue(Oid foreignTableId, const char *optionName)
 
 	return optionValue;
 }
+
 
 /* TupleCount estimates the number of base relation tuples in the given file. */
 static double
@@ -750,6 +768,7 @@ TupleCount(RelOptInfo *baserel, const char *filename)
 	return tupleCount;
 }
 
+
 /* PageCount calculates and returns the number of pages in a file. */
 static BlockNumber
 PageCount(const char *filename)
@@ -772,6 +791,7 @@ PageCount(const char *filename)
 
 	return pageCount;
 }
+
 
 /*
  * ColumnList takes in the planner's information about this foreign table. The
@@ -833,6 +853,10 @@ ColumnList(RelOptInfo *baserel)
 	return columnList;
 }
 
+
+/*
+ * Fills the column slots in the tuple by reading from the file
+ */
 static void
 FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
 		MemoryContext current, MemoryContext orcContext)
@@ -866,6 +890,7 @@ FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
 	}
 
 }
+
 
 /*
  * OrcAnalyzeForeignTable sets the total page count and the function pointer
@@ -903,8 +928,9 @@ OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRo
 	return true;
 }
 
+
 /*
- * JsonAcquireSampleRows acquires a random sample of rows from the foreign
+ * OrcAcquireSampleRows acquires a random sample of rows from the foreign
  * table. Selected rows are returned in the caller allocated sampleRows array,
  * which must have at least target row count entries. The actual number of rows
  * selected is returned as the function result. We also count the number of rows
@@ -912,7 +938,7 @@ OrcAnalyzeForeignTable(Relation relation, AcquireSampleRowsFunc *acquireSampleRo
  * row count to zero.
  *
  * Note that the returned list of rows does not always follow their actual order
- * in the JSON file. Therefore, correlation estimates derived later could be
+ * in the Orc file. Therefore, correlation estimates derived later could be
  * inaccurate, but that's OK. We currently don't use correlation estimates (the
  * planner only pays attention to correlation for index scans).
  */

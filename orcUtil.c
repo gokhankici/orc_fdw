@@ -7,6 +7,7 @@
 #include "orcUtil.h"
 #include "snappy.h"
 
+
 /*
  * Inflates ZLIB compressed buffer.
  *
@@ -43,12 +44,16 @@ InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 
 	switch (returnCode)
 	{
-	case Z_NEED_DICT:
-		returnCode = Z_DATA_ERROR; /* and fall through */
-	case Z_DATA_ERROR:
-	case Z_MEM_ERROR:
-		(void) inflateEnd(&stream);
-		return returnCode;
+		case Z_NEED_DICT:
+		{
+			returnCode = Z_DATA_ERROR; /* and fall through */
+		}
+		case Z_DATA_ERROR:
+		case Z_MEM_ERROR:
+		{
+			(void) inflateEnd(&stream);
+			return returnCode;
+		}
 	}
 
 	*outputSize = *outputSize - stream.avail_out;
@@ -58,6 +63,7 @@ InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize)
 
 	return returnCode == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
 }
+
 
 char *
 GetTypeKindName(FieldType__Kind kind)
@@ -101,6 +107,7 @@ GetTypeKindName(FieldType__Kind kind)
 	}
 }
 
+
 /*
  * Creates a stack with the given parameters.
  *
@@ -122,11 +129,19 @@ OrcStackInit(void* list, int elementSize, int length)
 	return stack;
 }
 
+
+/*
+ * Free the memory that stack uses
+ */
 void OrcStackFree(OrcStack* stack)
 {
 	freeMemory(stack);
 }
 
+
+/*
+ * Pop the first element in the stack and return it
+ */
 void* OrcStackPop(OrcStack* stack)
 {
 	if (stack->position < stack->length)

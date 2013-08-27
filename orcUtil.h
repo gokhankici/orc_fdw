@@ -22,9 +22,7 @@ typedef struct
 	int position;
 } OrcStack;
 
-//#define LogError(x) fprintf(stderr, x)
-//#define LogError2(x,y) fprintf(stderr, x,y)
-//#define LogError3(x,y,z) fprintf(stderr, x,y,z)
+#define COMPRESSED_HEADER_SIZE 3
 
 #define LogError(message) elog(ERROR, message)
 #define LogError2(message,arg1) elog(ERROR, message,arg1)
@@ -36,13 +34,6 @@ typedef struct
 
 #define MyOpenFile(filePath, mode) AllocateFile(filePath, mode)
 #define MyCloseFile(filePath) FreeFile(filePath)
-
-#define COMPRESSED_HEADER_SIZE 3
-
-#define min(x,y) (((x) < (y)) ? (x) : (y))
-#define max(x,y) (((x) < (y)) ? (y) : (x))
-
-int TimespecToStr(char* timespecBuffer, struct timespec *ts);
 
 int InflateZLIB(uint8_t *input, int inputSize, uint8_t *output, int *outputSize);
 

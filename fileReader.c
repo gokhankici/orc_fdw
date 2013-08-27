@@ -19,6 +19,7 @@ static bool MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType);
 static void PrimitiveFieldReaderFree(PrimitiveFieldReader *reader);
 static void StructFieldReaderFree(StructFieldReader *structReader);
 
+
 /**
  * Reads the postscript from the orc file and returns the postscript. Stores its offset to parameter.
  *
@@ -36,26 +37,37 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
 	size_t messageLength = 0;
 	uint8_t postScriptBuffer[MAX_POSTSCRIPT_SIZE];
 	int psSize = 0;
+	int result = 0;
 
-	fseek(file, -1, SEEK_END);
+	result = fseek(file, -1, SEEK_END);
+	if(result)
+	{
+		LogError("Error occurred while seeking in the file");
+	}
+
 	isByteRead = fread(&c, sizeof(char), 1, file);
 
-	if (!isByteRead)
+	if (isByteRead != 1)
 	{
-		LogError("Error while reading the last byte\n");
+		LogError("Error occurred while reading the last byte\n");
 		return NULL;
 	}
 
 	psSize = ((int) c) & 0xFF;
 
 	/* read postscript into the buffer */
-	fseek(file, -1 - psSize, SEEK_END);
+	result = fseek(file, -1 - psSize, SEEK_END);
+	if(result)
+	{
+		LogError("Error occurred while seeking in the file");
+	}
+
 	*postScriptOffset = ftell(file);
 	messageLength = fread(postScriptBuffer, 1, psSize, file);
 
 	if (messageLength != psSize)
 	{
-		LogError("Error while reading postscript from file\n");
+		LogError("Error occurred while reading postscript from file\n");
 		return NULL;
 	}
 
@@ -74,6 +86,7 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
 
 	return postScript;
 }
+
 
 /**
  * Reads file footer from the file at the given offset and length and returns the decoded footer to the parameter.
@@ -106,12 +119,12 @@ FileFooterInit(FILE *file, int footerOffset, long footerSize, CompressionParamet
 
 	if (result)
 	{
-		LogError("Error while uncompressing file footer\n");
+		LogError("Error occurred while uncompressing file footer\n");
 		return NULL;
 	}
 
 	/* unpack the message using protobuf-c. */
-	footer = footer__unpack(NULL, uncompressedFooterSize, (uint8_t*) uncompressedFooterBuffer);
+	footer = footer__unpack(NULL, uncompressedFooterSize, (uint8_t *) uncompressedFooterBuffer);
 
 	if (footer == NULL)
 	{
@@ -123,6 +136,7 @@ FileFooterInit(FILE *file, int footerOffset, long footerSize, CompressionParamet
 
 	return footer;
 }
+
 
 /**
  * Reads the stripe footer from the file by looking at the stripe information.
@@ -161,15 +175,15 @@ StripeFooterInit(FILE *file, StripeInformation *stripeInfo, CompressionParameter
 
 	if (result)
 	{
-		LogError("Error while uncompressing file footer");
+		LogError("Error occurred while uncompressing file footer");
 	}
 
 	stripeFooter = stripe_footer__unpack(NULL, uncompressedStripeFooterSize,
-			(uint8_t*) stripeFooterBuffer);
+			(uint8_t *) stripeFooterBuffer);
 
 	if (stripeFooter == NULL)
 	{
-		LogError("error while unpacking stripe footer\n");
+		LogError("Error occurred while unpacking stripe footer\n");
 		return NULL;
 	}
 
@@ -177,6 +191,7 @@ StripeFooterInit(FILE *file, StripeInformation *stripeInfo, CompressionParameter
 
 	return stripeFooter;
 }
+
 
 /*
  * Allocates memory and sets initial types/values for the variables of a field reader
@@ -199,8 +214,9 @@ FieldReaderAllocate(FieldReader *reader, Footer *footer, List *columns)
 	reader->fieldReader = alloc(sizeof(StructFieldReader));
 
 	/* allocate memory for the row as a structure reader */
-	return StructFieldReaderAllocate((StructFieldReader*) reader->fieldReader, footer, columns);
+	return StructFieldReaderAllocate((StructFieldReader *) reader->fieldReader, footer, columns);
 }
+
 
 /*
  * Utility function to check whether ORC type matches with PostgreSQL type
@@ -212,40 +228,59 @@ MatchOrcWithPSQL(FieldType__Kind orcType, Oid psqlType)
 
 	switch (psqlType)
 	{
-	case INT8OID:
-		matches = matches || (orcType == FIELD_TYPE__KIND__LONG);
-	case INT4OID:
-		matches = matches || (orcType == FIELD_TYPE__KIND__INT);
-	case INT2OID:
-		matches = matches || (orcType == FIELD_TYPE__KIND__SHORT);
-		break;
-	case FLOAT4OID:
-	case FLOAT8OID:
-		/* floating point type difference isn't made in the program */
-		matches = orcType == FIELD_TYPE__KIND__FLOAT || orcType == FIELD_TYPE__KIND__DOUBLE;
-		break;
-	case BOOLOID:
-		matches = orcType == FIELD_TYPE__KIND__BOOLEAN;
-		break;
-	case BPCHAROID:
-	case VARCHAROID:
-	case TEXTOID:
-		matches = orcType == FIELD_TYPE__KIND__STRING;
-		break;
-	case DATEOID:
-		matches = orcType == FIELD_TYPE__KIND__DATE;
-		break;
-	case TIMESTAMPOID:
-		matches = orcType == FIELD_TYPE__KIND__TIMESTAMP;
-		break;
-	case NUMERICOID:
-	case TIMESTAMPTZOID:
+		case INT8OID:
+		{
+			matches = matches || (orcType == FIELD_TYPE__KIND__LONG);
+		}
+		case INT4OID:
+		{
+			matches = matches || (orcType == FIELD_TYPE__KIND__INT);
+		}
+		case INT2OID:
+		{
+			matches = matches || (orcType == FIELD_TYPE__KIND__SHORT);
+			break;
+		}
+		case FLOAT4OID:
+		case FLOAT8OID:
+		{	
+			/* floating point type difference isn't made in the program */
+			matches = orcType == FIELD_TYPE__KIND__FLOAT || orcType == FIELD_TYPE__KIND__DOUBLE;
+			break;
+		}
+		case BOOLOID:
+		{
+			matches = orcType == FIELD_TYPE__KIND__BOOLEAN;
+			break;
+		}
+		case BPCHAROID:
+		case VARCHAROID:
+		case TEXTOID:
+		{
+			matches = orcType == FIELD_TYPE__KIND__STRING;
+			break;
+		}
+		case DATEOID:
+		{	
+			matches = orcType == FIELD_TYPE__KIND__DATE;
+			break;
+		}
+		case TIMESTAMPOID:
+		{
+			matches = orcType == FIELD_TYPE__KIND__TIMESTAMP;
+			break;
+		}
+		case NUMERICOID:
+		case TIMESTAMPTZOID:
 		default:
-		break;
+		{
+			break;
+		}
 	}
 
 	return matches;
 }
+
 
 /**
  * Allocates space for the structure reader using the file footer and the specified fields.
@@ -274,10 +309,10 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 	bool typesMatch = false;
 
 	reader->noOfFields = root->n_subtypes;
-	reader->fields = alloc(sizeof(FieldReader*) * reader->noOfFields);
+	reader->fields = alloc(sizeof(FieldReader *) * reader->noOfFields);
 	listCell = list_head(columns);
 
-	/* list may be empty, like in the case of "select count(*) from table_name" */
+	/* list may be empty, like in the case of "select count( *) from table_name" */
 	if (listCell)
 	{
 		variable = lfirst(listCell);
@@ -305,7 +340,7 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 			listCell = lnext(listCell);
 			if (listCell)
 			{
-				variable = (Var*) lfirst(listCell);
+				variable = (Var *) lfirst(listCell);
 			}
 			queryColumnIterator++;
 		}
@@ -344,7 +379,7 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 				if (listItemReader->psqlVariable->vartype == InvalidOid || !typesMatch)
 				{
 					LogError3(
-							"Error while reading column %d: ORC and PSQL types do not match, ORC type is %s[]",
+							"Error occurred while reading column %d: ORC and PSQL types do not match, ORC type is %s[]",
 							field->orcColumnNo, GetTypeKindName(listItemReader->kind));
 				}
 			}
@@ -388,7 +423,7 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 				if (arrayItemPSQLKind != InvalidOid || !typesMatch)
 				{
 					LogError3(
-							"Error while reading column %d: ORC and PSQL types do not match, ORC type is %s",
+							"Error occurred while reading column %d: ORC and PSQL types do not match, ORC type is %s",
 							field->orcColumnNo, GetTypeKindName(field->kind));
 				}
 			}
@@ -411,6 +446,7 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 	return 0;
 }
 
+
 /*
  * Initializes a reader for the given stripe. Uses helper function FieldReaderInitHelper
  * to recursively initialize its fields.
@@ -419,7 +455,7 @@ int
 FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 		StripeFooter *stripeFooter, CompressionParameters *parameters)
 {
-	StructFieldReader *structReader = (StructFieldReader*) fieldReader->fieldReader;
+	StructFieldReader *structReader = (StructFieldReader *) fieldReader->fieldReader;
 	FieldReader **fields = structReader->fields;
 	FieldReader *subField = NULL;
 	FileStream *indexStream = NULL;
@@ -462,10 +498,10 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 					DEFAULT_ROW_INDEX_SIZE, parameters->compressionKind);
 			FileStreamReadRemaining(indexStream, &indexBuffer, &indexBufferLength);
 
-			subField->rowIndex = row_index__unpack(NULL, indexBufferLength, (uint8_t*) indexBuffer);
+			subField->rowIndex = row_index__unpack(NULL, indexBufferLength, (uint8_t *) indexBuffer);
 			if (!subField->rowIndex)
 			{
-				LogError("Error while unpacking row index message");
+				LogError("Error occurred while unpacking row index message");
 				return -1;
 			}
 
@@ -475,7 +511,7 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 		/* if column type is list we need to take into account the index stream for the child */
 		if (subField->kind == FIELD_TYPE__KIND__LIST)
 		{
-			subField = &((ListFieldReader*) subField->fieldReader)->itemReader;
+			subField = &((ListFieldReader *) subField->fieldReader)->itemReader;
 
 			/* get the child's index stream */
 			currentIndexOffset += stream->length;
@@ -496,10 +532,10 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 				FileStreamReadRemaining(indexStream, &indexBuffer, &indexBufferLength);
 
 				subField->rowIndex = row_index__unpack(NULL, indexBufferLength,
-						(uint8_t*) indexBuffer);
+						(uint8_t *) indexBuffer);
 				if (!subField->rowIndex)
 				{
-					LogError("Error while unpacking row index message");
+					LogError("Error occurred while unpacking row index message");
 					return -1;
 				}
 
@@ -520,6 +556,7 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 	return FieldReaderInitHelper(fieldReader, file, &currentDataOffset, &streamNo, stripeFooter,
 			parameters);
 }
+
 
 /**
  * Helper function to initialize the reader for the given stripe
@@ -580,159 +617,160 @@ FieldReaderInitHelper(FieldReader *fieldReader, FILE *file, long *currentDataOff
 
 	switch (fieldKind)
 	{
-	case FIELD_TYPE__KIND__LIST:
-	{
-		ListFieldReader *listFieldReader = fieldReader->fieldReader;
-
-		if (fieldReader->required)
+		case FIELD_TYPE__KIND__LIST:
 		{
-			/* get the length stream of the list field */
-			result = StreamReaderInit(&listFieldReader->lengthReader, FIELD_TYPE__KIND__INT, file,
-					*currentDataOffset, *currentDataOffset + stream->length, parameters);
-		}
+			ListFieldReader *listFieldReader = fieldReader->fieldReader;
 
-		if (result)
-		{
-			return -1;
-		}
-
-		*currentDataOffset += stream->length;
-		(*streamNo)++;
-
-		if (*streamNo >= totalStreamCount)
-		{
-			return -1;
-		}
-
-		stream = stripeFooter->streams[*streamNo];
-
-		if (IsComplexType(listFieldReader->itemReader.kind))
-		{
-			LogError("List of complex types complex types are not supported\n");
-			return -1;
-		}
-
-		/* set the readers for the child of the list */
-		return FieldReaderInitHelper(&listFieldReader->itemReader, file, currentDataOffset,
-				streamNo, stripeFooter, parameters);
-	}
-	case FIELD_TYPE__KIND__MAP:
-	case FIELD_TYPE__KIND__DECIMAL:
-	case FIELD_TYPE__KIND__UNION:
-	{
-		/* these are not supported yet */
-		LogError2("Use of not supported type. Type id: %d\n", fieldKind);
-		return -1;
-	}
-	case FIELD_TYPE__KIND__STRUCT:
-	{
-		/* check for nested types is done at FieldReaderAllocate function */
-		StructFieldReader *structFieldReader = fieldReader->fieldReader;
-		FieldReader* subfield = NULL;
-		int fieldIndex = 0;
-
-		for (fieldIndex = 0; fieldIndex < structFieldReader->noOfFields; fieldIndex++)
-		{
-			subfield = structFieldReader->fields[fieldIndex];
-			result = FieldReaderInitHelper(subfield, file, currentDataOffset, streamNo,
-					stripeFooter, parameters);
+			if (fieldReader->required)
+			{
+				/* get the length stream of the list field */
+				result = StreamReaderInit(&listFieldReader->lengthReader, FIELD_TYPE__KIND__INT, file,
+						*currentDataOffset, *currentDataOffset + stream->length, parameters);
+			}
 
 			if (result)
 			{
 				return -1;
 			}
-		}
-
-		return (*streamNo == totalStreamCount) ? 0 : -1;
-	}
-	default:
-	{
-		FieldType__Kind streamKind = 0;
-		int dataStreamCount = 0;
-		int dataStreamIterator = 0;
-
-		/* these are the supported types, unsupported types are declared above */
-		PrimitiveFieldReader *primitiveFieldReader = fieldReader->fieldReader;
-		ColumnEncoding *columnEncoding = stripeFooter->columns[fieldReader->orcColumnNo];
-		primitiveFieldReader->encoding = columnEncoding->kind;
-
-		if (columnEncoding->kind == COLUMN_ENCODING__KIND__DIRECT_V2
-				|| columnEncoding->kind == COLUMN_ENCODING__KIND__DICTIONARY_V2)
-		{
-			LogError("Encoding V2 is not supported");
-			return -1;
-		}
-
-		if (fieldReader->kind == FIELD_TYPE__KIND__STRING && primitiveFieldReader)
-		{
-			primitiveFieldReader->hasDictionary = (columnEncoding->kind
-					== COLUMN_ENCODING__KIND__DICTIONARY);
-
-			/* if field's type is string, (re)initialize dictionary */
-			if (primitiveFieldReader->dictionary)
-			{
-				int dictionaryIterator = 0;
-
-				for (dictionaryIterator = 0; dictionaryIterator < primitiveFieldReader->dictionarySize;
-						++dictionaryIterator)
-				{
-					freeMemory(primitiveFieldReader->dictionary[dictionaryIterator]);
-				}
-				freeMemory(primitiveFieldReader->dictionary);
-				freeMemory(primitiveFieldReader->wordLength);
-				primitiveFieldReader->dictionary = NULL;
-				primitiveFieldReader->wordLength = NULL;
-			}
-
-			if (fieldReader->required)
-			{
-				primitiveFieldReader->dictionarySize = columnEncoding->dictionarysize;
-			}
-			else if (primitiveFieldReader)
-			{
-				primitiveFieldReader->dictionarySize = 0;
-			}
-		}
-		else if (columnEncoding->kind != COLUMN_ENCODING__KIND__DIRECT)
-		{
-			LogError2("Only direct encoding is supported for %s types.",
-					GetTypeKindName(fieldReader->kind));
-			return -1;
-		}
-
-		dataStreamCount = GetStreamCount(fieldReader->kind, columnEncoding->kind);
-
-		/* check if there exists enough stream for the current field */
-		if (*streamNo + dataStreamCount > totalStreamCount)
-		{
-			return -1;
-		}
-
-		for (dataStreamIterator = 0; dataStreamIterator < dataStreamCount; ++dataStreamIterator)
-		{
-			streamKind = GetStreamKind(fieldKind, columnEncoding->kind, dataStreamIterator);
-
-			if (fieldReader->required)
-			{
-				result = StreamReaderInit(&primitiveFieldReader->readers[dataStreamIterator],
-						streamKind, file, *currentDataOffset, *currentDataOffset + stream->length,
-						parameters);
-			}
-
-			if (result)
-			{
-				return result;
-			}
 
 			*currentDataOffset += stream->length;
 			(*streamNo)++;
-			stream = stripeFooter->streams[*streamNo];
-		}
 
-		return 0;
-	}
+			if (*streamNo >= totalStreamCount)
+			{
+				return -1;
+			}
+
+			stream = stripeFooter->streams[*streamNo];
+
+			if (IsComplexType(listFieldReader->itemReader.kind))
+			{
+				LogError("List of complex types complex types are not supported\n");
+				return -1;
+			}
+
+			/* set the readers for the child of the list */
+			return FieldReaderInitHelper(&listFieldReader->itemReader, file, currentDataOffset,
+					streamNo, stripeFooter, parameters);
+		}
+		case FIELD_TYPE__KIND__MAP:
+		case FIELD_TYPE__KIND__DECIMAL:
+		case FIELD_TYPE__KIND__UNION:
+		{
+			/* these are not supported yet */
+			LogError2("Use of not supported type. Type id: %d\n", fieldKind);
+			return -1;
+		}
+		case FIELD_TYPE__KIND__STRUCT:
+		{
+			/* check for nested types is done at FieldReaderAllocate function */
+			StructFieldReader *structFieldReader = fieldReader->fieldReader;
+			FieldReader* subfield = NULL;
+			int fieldIndex = 0;
+
+			for (fieldIndex = 0; fieldIndex < structFieldReader->noOfFields; fieldIndex++)
+			{
+				subfield = structFieldReader->fields[fieldIndex];
+				result = FieldReaderInitHelper(subfield, file, currentDataOffset, streamNo,
+						stripeFooter, parameters);
+
+				if (result)
+				{
+					return -1;
+				}
+			}
+
+			return (*streamNo == totalStreamCount) ? 0 : -1;
+		}
+		default:
+		{
+			/* these are the supported types, unsupported types are declared above */
+			FieldType__Kind streamKind = 0;
+			int dataStreamCount = 0;
+			int dataStreamIterator = 0;
+
+			PrimitiveFieldReader *primitiveFieldReader = fieldReader->fieldReader;
+			ColumnEncoding *columnEncoding = stripeFooter->columns[fieldReader->orcColumnNo];
+			primitiveFieldReader->encoding = columnEncoding->kind;
+
+			if (columnEncoding->kind == COLUMN_ENCODING__KIND__DIRECT_V2 || 
+					columnEncoding->kind == COLUMN_ENCODING__KIND__DICTIONARY_V2)
+			{
+				LogError("Encoding V2 is not supported");
+				return -1;
+			}
+
+			if (fieldReader->kind == FIELD_TYPE__KIND__STRING && primitiveFieldReader)
+			{
+				primitiveFieldReader->hasDictionary = (columnEncoding->kind ==
+						COLUMN_ENCODING__KIND__DICTIONARY);
+
+				/* if field's type is string, (re)initialize dictionary */
+				if (primitiveFieldReader->dictionary)
+				{
+					int dictionaryIterator = 0;
+
+					for (dictionaryIterator = 0; dictionaryIterator < primitiveFieldReader->dictionarySize;
+							++dictionaryIterator)
+					{
+						freeMemory(primitiveFieldReader->dictionary[dictionaryIterator]);
+					}
+					freeMemory(primitiveFieldReader->dictionary);
+					freeMemory(primitiveFieldReader->wordLength);
+					primitiveFieldReader->dictionary = NULL;
+					primitiveFieldReader->wordLength = NULL;
+				}
+
+				if (fieldReader->required)
+				{
+					primitiveFieldReader->dictionarySize = columnEncoding->dictionarysize;
+				}
+				else if (primitiveFieldReader)
+				{
+					primitiveFieldReader->dictionarySize = 0;
+				}
+			}
+			else if (columnEncoding->kind != COLUMN_ENCODING__KIND__DIRECT)
+			{
+				LogError2("Only direct encoding is supported for %s types.",
+						GetTypeKindName(fieldReader->kind));
+				return -1;
+			}
+
+			dataStreamCount = GetStreamCount(fieldReader->kind, columnEncoding->kind);
+
+			/* check if there exists enough stream for the current field */
+			if (*streamNo + dataStreamCount > totalStreamCount)
+			{
+				return -1;
+			}
+
+			for (dataStreamIterator = 0; dataStreamIterator < dataStreamCount; ++dataStreamIterator)
+			{
+				streamKind = GetStreamKind(fieldKind, columnEncoding->kind, dataStreamIterator);
+
+				if (fieldReader->required)
+				{
+					result = StreamReaderInit(&primitiveFieldReader->readers[dataStreamIterator],
+							streamKind, file, *currentDataOffset, *currentDataOffset + stream->length,
+							parameters);
+				}
+
+				if (result)
+				{
+					return result;
+				}
+
+				*currentDataOffset += stream->length;
+				(*streamNo)++;
+				stream = stripeFooter->streams[*streamNo];
+			}
+
+			return 0;
+		}
 	}
 }
+
 
 /*
  * Seek to the given stride in all required fields.
@@ -742,7 +780,7 @@ FieldReaderInitHelper(FieldReader *fieldReader, FILE *file, long *currentDataOff
 void
 FieldReaderSeek(FieldReader *rowReader, int strideIndex)
 {
-	StructFieldReader *structReader = (StructFieldReader*) rowReader->fieldReader;
+	StructFieldReader *structReader = (StructFieldReader  *) rowReader->fieldReader;
 	FieldReader *subfield = NULL;
 	RowIndex *rowIndex = NULL;
 	RowIndexEntry *rowIndexEntry = NULL;
@@ -771,11 +809,11 @@ FieldReaderSeek(FieldReader *rowReader, int strideIndex)
 			case FIELD_TYPE__KIND__LIST:
 			{
 				/* set the length reader of the list column reader */
-				StreamReaderSeek(&((ListFieldReader*) subfield->fieldReader)->lengthReader,
+				StreamReaderSeek(&((ListFieldReader *) subfield->fieldReader)->lengthReader,
 						subfield->kind, FIELD_TYPE__KIND__INT, stack);
 
 				/* set the subfield as the list item reader and skip its content */
-				subfield = &((ListFieldReader*) subfield->fieldReader)->itemReader;
+				subfield = &((ListFieldReader *) subfield->fieldReader)->itemReader;
 
 				rowIndex = subfield->rowIndex;
 				rowIndexEntry = rowIndex->entry[strideIndex];
@@ -792,7 +830,7 @@ FieldReaderSeek(FieldReader *rowReader, int strideIndex)
 			}
 			default:
 			{
-				PrimitiveFieldReader *primitiveFieldReader = (PrimitiveFieldReader*) subfield->fieldReader;
+				PrimitiveFieldReader *primitiveFieldReader = (PrimitiveFieldReader *) subfield->fieldReader;
 				FieldType__Kind streamKind = 0;
 				int dataStreamCount = 0;
 				int dataStreamIndex = 0;
@@ -806,9 +844,9 @@ FieldReaderSeek(FieldReader *rowReader, int strideIndex)
 					 * When dictionary encoding is used for strings, we only make a jump in the
 					 * data stream which is the integer stream for the dictionary item position.
 					 */
-					if ((subfield->kind == FIELD_TYPE__KIND__STRING)
-							&& (primitiveFieldReader->encoding == COLUMN_ENCODING__KIND__DICTIONARY)
-							&& (dataStreamIndex != DATA_STREAM))
+					if ((subfield->kind == FIELD_TYPE__KIND__STRING) && 
+						(primitiveFieldReader->encoding == COLUMN_ENCODING__KIND__DICTIONARY) && 
+						(dataStreamIndex != DATA_STREAM))
 					{
 						continue;
 					}
@@ -825,6 +863,7 @@ FieldReaderSeek(FieldReader *rowReader, int strideIndex)
 		}
 	}
 }
+
 
 /**
  * static function to free up the streams of a primitive field reader
@@ -858,6 +897,7 @@ PrimitiveFieldReaderFree(PrimitiveFieldReader *reader)
 	freeMemory(reader);
 }
 
+
 /**
  * static function to free up the fields of a structure field reader
  */
@@ -879,6 +919,7 @@ StructFieldReaderFree(StructFieldReader *structReader)
 	freeMemory(structReader->fields);
 	freeMemory(structReader);
 }
+
 
 /**
  * Frees up a field reader
@@ -910,22 +951,30 @@ FieldReaderFree(FieldReader *reader)
 
 	switch (reader->kind)
 	{
-	case FIELD_TYPE__KIND__STRUCT:
-		StructFieldReaderFree((StructFieldReader*) reader->fieldReader);
-		break;
-	case FIELD_TYPE__KIND__LIST:
-		listReader = (ListFieldReader*) reader->fieldReader;
-		StreamReaderFree(&listReader->lengthReader);
-		FieldReaderFree(&listReader->itemReader);
-		freeMemory(listReader);
-		break;
-	case FIELD_TYPE__KIND__DECIMAL:
-		case FIELD_TYPE__KIND__UNION:
-		case FIELD_TYPE__KIND__MAP:
-		return -1;
-	default:
-		PrimitiveFieldReaderFree((PrimitiveFieldReader*) reader->fieldReader);
-		break;
+		case FIELD_TYPE__KIND__STRUCT:
+		{
+			StructFieldReaderFree((StructFieldReader *) reader->fieldReader);
+			break;
+		}
+		case FIELD_TYPE__KIND__LIST:
+		{
+			listReader = (ListFieldReader *) reader->fieldReader;
+			StreamReaderFree(&listReader->lengthReader);
+			FieldReaderFree(&listReader->itemReader);
+			freeMemory(listReader);
+			break;
+		}
+		case FIELD_TYPE__KIND__DECIMAL:
+		{
+			case FIELD_TYPE__KIND__UNION:
+			case FIELD_TYPE__KIND__MAP:
+			return -1;
+		}
+		default:
+		{
+			PrimitiveFieldReaderFree((PrimitiveFieldReader *) reader->fieldReader);
+			break;
+		}
 	}
 
 	return 0;
