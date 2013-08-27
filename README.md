@@ -14,7 +14,7 @@ Foreign data wrapper for reading ORC formatted files.
     sudo make install
     ```
 3. Run `sh init.sh` in the orc\_fdw folder to convert the ORC protobuf definitions into C source code.
-4. Run `make install` to compile and install the extension in the orc\_fdw folder.
+4. Run `make install` in the orc\_fdw folder to compile and install the extension.
 
 ## Converting To ORC Format
 
