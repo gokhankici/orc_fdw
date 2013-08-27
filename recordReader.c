@@ -1141,7 +1141,7 @@ ReadListFieldAsDatum(FieldReader *fieldReader, bool *isNull)
 		else if (isListPresent == -1)
 		{
 			/* error occurred while reading bit, return error code */
-			LogError("Error occurred while reading pressent bit of list");
+			LogError("Error occurred while reading present bit of list");
 			return -1;
 		}
 	}
