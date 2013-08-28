@@ -39,10 +39,10 @@
 #define ORC_PSQL_EPOCH_IN_DAYS			10957
 
 /*
- * The conversion signed integer to ORC format is as follows:
+ * The conversion from signed integer to ORC format is as follows:
  * 0, -1, 1, -2, 2, -3, 3, ......  --> 0, 1, 2, 3, 4, 5, 6, ...
  * 
- * So, in ORC even numbers are non-negative and odd numbers are negative.
+ * So, in ORC even numbers are the non-negative and odd numbers are the negative numbers.
  * Functions to convert to/from ORC format from/to regular format are defined below.
  */
 #define ToUnsignedInteger(x) (uint64_t)( ((x) < 0) ? ( ((uint64_t)-(x+1)) * 2 + 1) : (2 * (uint64_t)(x)))
@@ -60,7 +60,7 @@ typedef enum
 typedef struct
 {
 	/* stream to read from the file */
-	FileStream* stream;
+	FileStream *stream;
 
 	/* type of the encoding */
 	EncodingType currentEncodingType;
@@ -119,10 +119,8 @@ typedef struct
 	/* for string type to store the dictionary */
 	char hasDictionary;
 	int dictionarySize;
-	int* wordLength;
-	char** dictionary;
-	char dictionaryItem[DEFAULT_DICTIONARY_ITEM_LENGTH];
-	char *tempDictionaryItem;
+	int *wordLength;
+	char **dictionary;
 } PrimitiveFieldReader;
 
 
@@ -139,7 +137,7 @@ typedef struct
 typedef struct
 {
 	int noOfFields;
-	FieldReader** fields;
+	FieldReader **fields;
 } StructFieldReader;
 
 
@@ -148,6 +146,9 @@ int StreamReaderInit(StreamReader *streamReader, FieldType__Kind streamKind, FIL
 		long offset, long limit, CompressionParameters *parameters);
 void StreamReaderSeek(StreamReader *streamReader, FieldType__Kind fieldType,
 		FieldType__Kind streamKind, OrcStack *stack);
+
+
+void FillDictionary(FieldReader* stringFieldReader);
 
 
 /*

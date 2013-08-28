@@ -402,7 +402,6 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 			primitiveReader->dictionary = NULL;
 			primitiveReader->dictionarySize = 0;
 			primitiveReader->wordLength = NULL;
-			primitiveReader->tempDictionaryItem = NULL;
 
 			for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
 			{
@@ -436,7 +435,6 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 			primitiveReader->dictionary = NULL;
 			primitiveReader->dictionarySize = 0;
 			primitiveReader->wordLength = NULL;
-			primitiveReader->tempDictionaryItem = NULL;
 
 			for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
 			{
@@ -557,7 +555,6 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 	return FieldReaderInitHelper(fieldReader, file, &currentDataOffset, &streamNo, stripeFooter,
 			parameters);
 }
-
 
 /**
  * Helper function to initialize the reader for the given stripe
@@ -767,6 +764,12 @@ FieldReaderInitHelper(FieldReader *fieldReader, FILE *file, long *currentDataOff
 				stream = stripeFooter->streams[*streamNo];
 			}
 
+			/* fill the dictionary if the field has one */
+			if (primitiveFieldReader->hasDictionary)
+			{
+				FillDictionary(fieldReader);
+			}
+
 			return 0;
 		}
 	}
@@ -885,11 +888,6 @@ PrimitiveFieldReaderFree(PrimitiveFieldReader *reader)
 
 		reader->dictionary = NULL;
 		reader->wordLength = NULL;
-	}
-
-	if (reader->tempDictionaryItem)
-	{
-		freeMemory(reader->tempDictionaryItem);
 	}
 
 	for (index = 0; index < MAX_STREAM_COUNT; ++index)

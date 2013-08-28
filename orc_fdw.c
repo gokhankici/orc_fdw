@@ -78,8 +78,7 @@ static int OrcAcquireSampleRows(Relation relation, int logLevel, HeapTuple *samp
  * Helper functions for reading rows from the file
  */
 static void OrcGetNextStripe(OrcFdwExecState *execState);
-static void FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
-		MemoryContext current, MemoryContext orcContext);
+static void FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls);
 
 /* Declarations for dynamic loading */
 PG_MODULE_MAGIC;
@@ -503,7 +502,6 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 	OrcFdwExecState *execState = (OrcFdwExecState *) scanState->fdw_state;
 	TupleTableSlot *tupleSlot = scanState->ss.ss_ScanTupleSlot;
 	StripeInformation *currentStripe = execState->currentStripeInfo;
-	MemoryContext oldContext = CurrentMemoryContext;
 	Footer *footer = execState->footer;
 
 	TupleDesc tupleDescriptor = tupleSlot->tts_tupleDescriptor;
@@ -606,8 +604,7 @@ OrcIterateForeignScan(ForeignScanState *scanState)
 		}
 	} while (nextStripeNeeded);
 
-	FillTupleSlot(execState->recordReader, columnValues, columnNulls, oldContext,
-			execState->orcContext);
+	FillTupleSlot(execState->recordReader, columnValues, columnNulls);
 	execState->currentLineNumber++;
 
 	ExecStoreVirtualTuple(tupleSlot);
@@ -851,8 +848,7 @@ ColumnList(RelOptInfo *baserel)
  * Fills the column slots in the tuple by reading from the file
  */
 static void
-FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
-		MemoryContext current, MemoryContext orcContext)
+FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls)
 {
 	FieldReader* fieldReader = NULL;
 	StructFieldReader* structFieldReader = NULL;
@@ -868,8 +864,6 @@ FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
 			continue;
 		}
 
-		MemoryContextSwitchTo(orcContext);
-
 		if (fieldReader->kind == FIELD_TYPE__KIND__LIST)
 		{
 			columnValues[columnNo] = ReadListFieldAsDatum(fieldReader, columnNulls + columnNo);
@@ -878,8 +872,6 @@ FillTupleSlot(FieldReader *recordReader, Datum *columnValues, bool *columnNulls,
 		{
 			columnValues[columnNo] = ReadPrimitiveFieldAsDatum(fieldReader, columnNulls + columnNo);
 		}
-
-		MemoryContextSwitchTo(current);
 	}
 
 }

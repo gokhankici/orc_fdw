@@ -817,6 +817,59 @@ GetStreamCount(FieldType__Kind type, ColumnEncoding__Kind encoding)
 	}
 }
 
+
+/*
+ * Reads all strings of a dictionary encoded string column into the main memory.
+ */
+void
+FillDictionary(FieldReader* stringFieldReader)
+{
+	PrimitiveFieldReader *primitiveFieldReader = (PrimitiveFieldReader *) stringFieldReader->fieldReader;
+	StreamReader *integerStreamReader = NULL;
+	StreamReader *binaryStreamReader = NULL;
+	uint64_t wordLength = 0;
+	int dictionaryIndex = 0;
+	int result = 0;
+
+	/* if dictionary is NULL, read the whole dictionary to the memory */
+	primitiveFieldReader->dictionary =
+			alloc(sizeof(char *) * primitiveFieldReader->dictionarySize);
+	primitiveFieldReader->wordLength =
+			alloc(sizeof(int) * primitiveFieldReader->dictionarySize);
+	integerStreamReader = &primitiveFieldReader->readers[LENGTH_STREAM];
+	binaryStreamReader = &primitiveFieldReader->readers[DICTIONARY_DATA_STREAM];
+
+	/* read the dictionary items one by one*/
+	for (dictionaryIndex = 0; dictionaryIndex < primitiveFieldReader->dictionarySize;
+			++dictionaryIndex)
+	{
+		/*
+		 * First read dictionary item length. Since lengths cannot be negative,
+		 * directly use that number.
+		 */
+		result = ReadInteger(stringFieldReader->kind, integerStreamReader, &wordLength);
+		if (result < 0)
+		{
+			LogError("Error occurred while reading dictionary item length");
+		}
+
+		/* set the word length and allocate memory for the item */
+		primitiveFieldReader->wordLength[dictionaryIndex] = (int) wordLength;
+		primitiveFieldReader->dictionary[dictionaryIndex] = alloc(wordLength + 1);
+
+		/* read the item from the file */
+		result = ReadBinary(binaryStreamReader,
+				(uint8_t *) primitiveFieldReader->dictionary[dictionaryIndex], (int) wordLength);
+
+		if (result < 0)
+		{
+			LogError("Error occurred while reading dictionary item");
+		}
+
+		primitiveFieldReader->dictionary[dictionaryIndex][wordLength] = '\0';
+	}
+}
+
 /*
  * Reads a primitive field from the reader and returns it as a Datum.
  *
@@ -830,6 +883,7 @@ ReadPrimitiveFieldAsDatum(FieldReader *fieldReader, bool *isNull)
 	StreamReader *integerStreamReader = NULL;
 	int result = 0;
 
+	/* first check if the field has a present bit stream */
 	if (fieldReader->hasPresentBitReader)
 	{
 		StreamReader *presentStreamReader = &fieldReader->presentBitReader;
@@ -914,59 +968,12 @@ ReadPrimitiveFieldAsDatum(FieldReader *fieldReader, bool *isNull)
 		case VARCHAROID:
 		case TEXTOID:
 		{
-			StreamReader *binaryStreamReader = NULL;
 			char* dictionaryItem = NULL;
-			uint64_t wordLength = 0;
 
 			/* check if the strings are dictionary encoded */
 			if (primitiveReader->hasDictionary)
 			{
 				uint64_t dictionaryIndex = 0;
-
-				/* fill the dictionary if it is empty */
-				if (primitiveReader->dictionary == NULL)
-				{
-					/* if dictionary is NULL, read the whole dictionary to the memory */
-					primitiveReader->dictionary =
-						alloc(sizeof(char *) * primitiveReader->dictionarySize);
-					primitiveReader->wordLength =
-						alloc(sizeof(int) * primitiveReader->dictionarySize);
-
-					integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
-					binaryStreamReader = &primitiveReader->readers[DICTIONARY_DATA_STREAM];
-
-					/* read the dictionary items one by one*/
-					for (dictionaryIndex = 0; dictionaryIndex < primitiveReader->dictionarySize;
-							++dictionaryIndex)
-					{
-						/* 
-						 * First read dictionary item length. Since lengths cannot be negative,
-						 * directly use that number.
-						 */
-						result = ReadInteger(fieldReader->kind, integerStreamReader, &wordLength);
-						if (result < 0)
-						{
-							LogError("Error occurred while reading dictionary item length");
-							return -1;
-						}
-
-						/* set the word length and allocate memory for the item */
-						primitiveReader->wordLength[dictionaryIndex] = (int) wordLength;
-						primitiveReader->dictionary[dictionaryIndex] = alloc(wordLength + 1);
-
-						/* read the item from the file */
-						result = ReadBinary(binaryStreamReader,
-								(uint8_t *) primitiveReader->dictionary[dictionaryIndex],
-								(int) wordLength);
-
-						primitiveReader->dictionary[dictionaryIndex][wordLength] = '\0';
-						if (result < 0)
-						{
-							LogError("Error occurred while reading dictionary item");
-							return -1;
-						}
-					}
-				}
 
 				/* read the dictionary item position of the current string */
 				integerStreamReader = &primitiveReader->readers[DATA_STREAM];
@@ -977,6 +984,9 @@ ReadPrimitiveFieldAsDatum(FieldReader *fieldReader, bool *isNull)
 			}
 			else
 			{
+				StreamReader *binaryStreamReader = NULL;
+				uint64_t wordLength = 0;
+
 				/* if direct encoding is used, just read the current string */
 				binaryStreamReader = &primitiveReader->readers[DATA_STREAM];
 				integerStreamReader = &primitiveReader->readers[LENGTH_STREAM];
@@ -989,27 +999,7 @@ ReadPrimitiveFieldAsDatum(FieldReader *fieldReader, bool *isNull)
 					return -1;
 				}
 
-				/*
-				 * Allocate space for the string. If size is small use the pre-allocated char array.
-				 * If not, (re)allocate a temporary space for the string.
-				 */
-				if(DEFAULT_DICTIONARY_ITEM_LENGTH < wordLength + 1)
-				{
-					if(primitiveReader->tempDictionaryItem)
-					{
-						primitiveReader->tempDictionaryItem = reAllocateMemory(primitiveReader->tempDictionaryItem,
-								wordLength + 1);
-					}
-					else
-					{
-						primitiveReader->tempDictionaryItem = alloc(wordLength + 1);
-					}
-					dictionaryItem = primitiveReader->tempDictionaryItem;
-				}
-				else
-				{
-					dictionaryItem = primitiveReader->dictionaryItem;
-				}
+				dictionaryItem = alloc(wordLength + 1);
 
 				/* read the string from the stream */
 				result = ReadBinary(binaryStreamReader, (uint8_t*) dictionaryItem, (int) wordLength);
