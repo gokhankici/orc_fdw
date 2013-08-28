@@ -7,6 +7,9 @@
 #include "recordReader.h"
 #include "orcUtil.h"
 
+#define ORC_MAGIC "ORC"
+#define ORC_MAGIC_LENGTH 3
+
 /* macros for getting PostgreSQL column information of a field reader */
 #define OrcGetPSQLIndex(fieldReader)  (fieldReader->psqlVariable->varattno - 1)
 #define OrcGetPSQLType(fieldReader)  (fieldReader->psqlVariable->vartype)

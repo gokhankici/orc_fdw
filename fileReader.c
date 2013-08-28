@@ -38,6 +38,7 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
 	uint8_t postScriptBuffer[MAX_POSTSCRIPT_SIZE];
 	int psSize = 0;
 	int result = 0;
+	char magic[ORC_MAGIC_LENGTH + 1];
 
 	result = fseek(file, -1, SEEK_END);
 	if(result)
@@ -55,6 +56,11 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
 
 	psSize = ((int) c) & 0xFF;
 
+	if(psSize < strlen(ORC_MAGIC) + 1)
+	{
+		LogError2("Malformed ORC file. Invalid postscript length %d", psSize);
+	}
+
 	/* read postscript into the buffer */
 	result = fseek(file, -1 - psSize, SEEK_END);
 	if(result)
@@ -71,6 +77,27 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
 		return NULL;
 	}
 
+	/* read last ORC_MAGIC_LENGTH bytes of the message and compare it with MAGIC */
+	memcpy(magic, postScriptBuffer + psSize - ORC_MAGIC_LENGTH, ORC_MAGIC_LENGTH);
+	magic[ORC_MAGIC_LENGTH] = '\0';
+
+	if (strcmp(magic, ORC_MAGIC))
+	{
+		/* this may be the 0.11.0 version, look for magic at the beginning */
+		fseek(file, 0, SEEK_SET);
+		result = fread(magic, 1, ORC_MAGIC_LENGTH, file);
+
+		if(result != ORC_MAGIC_LENGTH)
+		{
+			LogError("Error while reading magic of the file");
+		}
+
+		if (strcmp(magic, ORC_MAGIC))
+		{
+			LogError("Malformed ORC file. Invalid postscript.");
+		}
+	}
+
 	/* unpack the message using protobuf-c. */
 	postScript = post_script__unpack(NULL, messageLength, postScriptBuffer);
 
@@ -78,6 +105,32 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
 	{
 		LogError("error unpacking incoming message\n");
 		return NULL;
+	}
+
+	/* check the version of the ORC file */
+	if (postScript->n_version != 2 || postScript->version == NULL ||
+			postScript->version[0] != 0 || postScript->version[1] != 11)
+	{
+		char version[30];
+		int versionIndex = 0;
+
+		result = sprintf(version, "%d", postScript->version[0]);
+		if (result < 0)
+		{
+			LogError("Error while getting ORC version");
+		}
+
+		for (versionIndex = 0; versionIndex < postScript->n_version; ++versionIndex)
+		{
+			result = sprintf(version + strlen(version), ".%d", postScript->version[versionIndex]);
+			if (result < 0)
+			{
+				LogError("Error while getting ORC version");
+			}
+		}
+
+		LogError2("Unsupported ORC version (%s) found. Only v0.11 is supported currently.",
+				version);
 	}
 
 	parameters->compressionBlockSize =
