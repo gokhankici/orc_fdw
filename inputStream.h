@@ -87,6 +87,7 @@ typedef struct
  * Methods for using a file stream.
  */
 FileStream * FileStreamInit(FILE *file, long offset, long limit, int bufferSize, CompressionKind kind);
+void FileStreamReset(FileStream *stream, long offset, long limit, int bufferSize, CompressionKind kind);
 int FileStreamFree(FileStream *fileStream);
 char * FileStreamRead(FileStream *fileStream, int *length);
 int FileStreamReadByte(FileStream *fileStream, char *value);

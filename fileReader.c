@@ -402,6 +402,7 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 			primitiveReader->dictionary = NULL;
 			primitiveReader->dictionarySize = 0;
 			primitiveReader->wordLength = NULL;
+			primitiveReader->tempDictionaryItem = NULL;
 
 			for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
 			{
@@ -435,6 +436,7 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 			primitiveReader->dictionary = NULL;
 			primitiveReader->dictionarySize = 0;
 			primitiveReader->wordLength = NULL;
+			primitiveReader->tempDictionaryItem = NULL;
 
 			for (streamIterator = 0; streamIterator < MAX_STREAM_COUNT; ++streamIterator)
 			{
@@ -541,7 +543,6 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 
 				FileStreamFree(indexStream);
 			}
-
 		}
 
 		currentIndexOffset += stream->length;
@@ -885,6 +886,12 @@ PrimitiveFieldReaderFree(PrimitiveFieldReader *reader)
 		reader->dictionary = NULL;
 		reader->wordLength = NULL;
 	}
+
+	if (reader->tempDictionaryItem)
+	{
+		freeMemory(reader->tempDictionaryItem);
+	}
+
 	for (index = 0; index < MAX_STREAM_COUNT; ++index)
 	{
 		if (reader->readers[index].stream != NULL)

@@ -27,6 +27,7 @@
 #define COMMON_STREAM_COUNT			1
 
 #define MAX_POSTSCRIPT_SIZE		255
+#define DEFAULT_DICTIONARY_ITEM_LENGTH    255
 
 /* timestamp related values */
 #define SECONDS_PER_DAY					86400
@@ -120,6 +121,8 @@ typedef struct
 	int dictionarySize;
 	int* wordLength;
 	char** dictionary;
+	char dictionaryItem[DEFAULT_DICTIONARY_ITEM_LENGTH];
+	char *tempDictionaryItem;
 } PrimitiveFieldReader;
 
 

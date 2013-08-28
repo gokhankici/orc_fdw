@@ -283,16 +283,14 @@ StreamReaderInit(StreamReader *streamReader, FieldType__Kind streamKind, FILE *f
 
 	if (streamReader->stream != NULL)
 	{
-		if (FileStreamFree(streamReader->stream))
-		{
-			LogError("Error deleting previous compressed file stream\n");
-			return -1;
-		}
-		streamReader->stream = NULL;
-	}
-
-	streamReader->stream = FileStreamInit(file, offset, limit, parameters->compressionBlockSize,
+		FileStreamReset(streamReader->stream, offset, limit, parameters->compressionBlockSize,
 			parameters->compressionKind);
+	}
+	else
+	{
+		streamReader->stream = FileStreamInit(file, offset, limit, parameters->compressionBlockSize,
+				parameters->compressionKind);
+	}
 
 	switch (streamKind)
 	{
@@ -991,8 +989,27 @@ ReadPrimitiveFieldAsDatum(FieldReader *fieldReader, bool *isNull)
 					return -1;
 				}
 
-				/* allocate space for the string */
-				dictionaryItem = alloc((int) wordLength + 1);
+				/*
+				 * Allocate space for the string. If size is small use the pre-allocated char array.
+				 * If not, (re)allocate a temporary space for the string.
+				 */
+				if(DEFAULT_DICTIONARY_ITEM_LENGTH < wordLength + 1)
+				{
+					if(primitiveReader->tempDictionaryItem)
+					{
+						primitiveReader->tempDictionaryItem = reAllocateMemory(primitiveReader->tempDictionaryItem,
+								wordLength + 1);
+					}
+					else
+					{
+						primitiveReader->tempDictionaryItem = alloc(wordLength + 1);
+					}
+					dictionaryItem = primitiveReader->tempDictionaryItem;
+				}
+				else
+				{
+					dictionaryItem = primitiveReader->dictionaryItem;
+				}
 
 				/* read the string from the stream */
 				result = ReadBinary(binaryStreamReader, (uint8_t*) dictionaryItem, (int) wordLength);
@@ -1001,6 +1018,7 @@ ReadPrimitiveFieldAsDatum(FieldReader *fieldReader, bool *isNull)
 					LogError("Error occurred while reading string");
 					return -1;
 				}
+
 				dictionaryItem[wordLength] = '\0';
 			}
 

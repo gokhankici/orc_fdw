@@ -12,8 +12,29 @@
 #include "snappy.h"
 
 
+/*
+ * Resets a file buffer with the new data positions
+ */
+static void
+FileBufferReset(FileBuffer *fileBuffer, long offset, long limit, int bufferSize)
+{
+	fileBuffer->offset = offset;
+
+	if(fileBuffer->bufferSize < bufferSize)
+	{
+		fileBuffer->bufferSize = bufferSize;
+		fileBuffer->buffer = reAllocateMemory(fileBuffer->buffer, bufferSize);
+	}
+
+	fileBuffer->limit = limit;
+
+	fileBuffer->position = 0;
+	fileBuffer->length = 0;
+}
+
+
 /**
- * Initialize a FileStream.
+ * Initialize a FileBuffer.
  *
  * @param filePath file to read
  * @param offset starting position in the file
@@ -41,7 +62,6 @@ FileBufferInit(FILE *file, long offset, long limit, int bufferSize)
 
 	if (fileBuffer->buffer == NULL)
 	{
-		MyCloseFile(fileBuffer->file);
 		freeMemory(fileBuffer);
 		return NULL;
 	}
@@ -54,9 +74,9 @@ FileBufferInit(FILE *file, long offset, long limit, int bufferSize)
 
 
 /**
- * Frees up a file stream
+ * Frees up a file buffer
  *
- * @param fileStream file stream to free
+ * @param fileBuffer file stream to free
  *
  * @return 0 for success, -1 for failure
  */
@@ -83,7 +103,7 @@ FileBufferFree(FileBuffer *fileBuffer)
  * Static function to fill the buffer. Shifts the read bytes out of the buffer and
  * puts that many (if there are) bytes at the end of the stream
  *
- * @param fileStream file stream to fill
+ * @param fileBuffer file buffer to fill
  *
  * @return no of bytes read from the file when the buffer is filled. -1 for failure
  */
@@ -308,6 +328,36 @@ FileBufferSkip(FileBuffer *fileBuffer, long offset)
 	}
 }
 
+/*
+ * Resets the file stream with the new parameters
+ */
+void
+FileStreamReset(FileStream *stream, long offset, long limit, int bufferSize, CompressionKind kind)
+{
+	/* when uncompressed files are used, buffer size is set to ORC's default size */
+	if (kind == COMPRESSION_KIND__NONE)
+	{
+		bufferSize = DEFAULT_BUFFER_SIZE;
+	}
+
+	if (stream->bufferSize < bufferSize)
+	{
+		stream->bufferSize = bufferSize;
+		stream->allocatedMemory = reAllocateMemory(stream->allocatedMemory, stream->bufferSize);
+		stream->data = stream->allocatedMemory;
+	}
+
+	FileBufferReset(stream->fileBuffer, offset, limit, stream->bufferSize);
+
+	stream->compressionKind = kind;
+
+	stream->position = 0;
+	stream->length = 0;
+	stream->isNotCompressed = 0;
+
+	stream->startOffset = offset;
+	stream->currentCompressedBlockOffset = offset;
+}
 
 /**
  * Initialize a CompressedFileStream.
@@ -732,8 +782,7 @@ FileStreamReadRemaining(FileStream *stream, char **data, int *dataLength)
 			{
 				/* if there is not space in the new buffer double its size */
 				stream->tempBufferSize *= 2;
-				stream->tempBuffer =
-				reAllocateMemory(stream->tempBuffer, stream->tempBufferSize);
+				stream->tempBuffer = reAllocateMemory(stream->tempBuffer, stream->tempBufferSize);
 			}
 
 			memcpy(stream->tempBuffer + tempBufferPosition, stream->data, stream->length);

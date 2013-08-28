@@ -352,11 +352,6 @@ OrcGetNextStripe(OrcFdwExecState* execState)
 		stripe_footer__free_unpacked(execState->stripeFooter, NULL);
 	}
 
-	if (execState->currentStripeInfo)
-	{
-		stripe_information__free_unpacked(execState->currentStripeInfo, NULL);
-	}
-
 	if (execState->nextStripeNumber < footer->n_stripes)
 	{
 		StripeInformation *stripeInfo = footer->stripes[execState->nextStripeNumber];
