@@ -423,6 +423,7 @@ OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 {
 	OrcFdwExecState *execState = NULL;
 	ForeignScan *foreignScan = NULL;
+	TupleTableSlot *tupleSlot = scanState->ss.ss_ScanTupleSlot;
 	List *foreignPrivateList = NULL;
 	Oid foreignTableId = InvalidOid;
 	OrcFdwOptions *options = NULL;
@@ -430,6 +431,7 @@ OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	PostScript* postScript = NULL;
 	Footer* footer = NULL;
 	long postScriptOffset = 0;
+	int columnCount = 0;
 
 	/* if Explain with no Analyze, do nothing */
 	if (executorFlags & EXEC_FLAG_EXPLAIN_ONLY)
@@ -486,6 +488,12 @@ OrcBeginForeignScan(ForeignScanState *scanState, int executorFlags)
 	execState->recordReader = palloc(sizeof(FieldReader));
 
 	OrcInitializeFieldReader(execState, columnList);
+
+	columnCount = ((StructFieldReader *) execState->recordReader->fieldReader)->noOfFields;
+	if (columnCount != tupleSlot->tts_tupleDescriptor->natts)
+	{
+		LogError("Column count in table definition does not match with ORC file.");
+	}
 
 	scanState->fdw_state = (void *) execState;
 }

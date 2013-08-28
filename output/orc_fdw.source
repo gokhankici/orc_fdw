@@ -1,259 +1,273 @@
 --
--- Test foreign-data wrapper file_fdw.
+-- Test orc foreign data wrapper.
 --
--- Clean up in case a prior regression run failed
-SET client_min_messages TO 'error';
-DROP ROLE IF EXISTS file_fdw_superuser, file_fdw_user, no_priv_user;
-RESET client_min_messages;
-CREATE ROLE file_fdw_superuser LOGIN SUPERUSER; -- is a superuser
-CREATE ROLE file_fdw_user LOGIN;                -- has priv and user mapping
-CREATE ROLE no_priv_user LOGIN;                 -- has priv but no user mapping
--- Install file_fdw
-CREATE EXTENSION file_fdw;
--- file_fdw_superuser owns fdw-related objects
-SET ROLE file_fdw_superuser;
-CREATE SERVER file_server FOREIGN DATA WRAPPER file_fdw;
--- privilege tests
-SET ROLE file_fdw_user;
-CREATE FOREIGN DATA WRAPPER file_fdw2 HANDLER file_fdw_handler VALIDATOR file_fdw_validator;   -- ERROR
-ERROR:  permission denied to create foreign-data wrapper "file_fdw2"
-HINT:  Must be superuser to create a foreign-data wrapper.
-CREATE SERVER file_server2 FOREIGN DATA WRAPPER file_fdw;   -- ERROR
-ERROR:  permission denied for foreign-data wrapper file_fdw
-CREATE USER MAPPING FOR file_fdw_user SERVER file_server;   -- ERROR
-ERROR:  permission denied for foreign server file_server
-SET ROLE file_fdw_superuser;
-GRANT USAGE ON FOREIGN SERVER file_server TO file_fdw_user;
-SET ROLE file_fdw_user;
-CREATE USER MAPPING FOR file_fdw_user SERVER file_server;
--- create user mappings and grant privilege to test users
-SET ROLE file_fdw_superuser;
-CREATE USER MAPPING FOR file_fdw_superuser SERVER file_server;
-CREATE USER MAPPING FOR no_priv_user SERVER file_server;
+-- Settings to make the result deterministic
+SET datestyle = "ISO, YMD";
+-- Install json_fdw
+CREATE EXTENSION orc_fdw;
+CREATE SERVER orc_server FOREIGN DATA WRAPPER orc_fdw;
 -- validator tests
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'xml');  -- ERROR
-ERROR:  COPY format "xml" not recognized
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', header 'true');      -- ERROR
-ERROR:  COPY HEADER available only in CSV mode
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', quote ':');          -- ERROR
-ERROR:  COPY quote available only in CSV mode
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', escape ':');         -- ERROR
-ERROR:  COPY escape available only in CSV mode
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'binary', header 'true');    -- ERROR
-ERROR:  COPY HEADER available only in CSV mode
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'binary', quote ':');        -- ERROR
-ERROR:  COPY quote available only in CSV mode
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'binary', escape ':');       -- ERROR
-ERROR:  COPY escape available only in CSV mode
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter 'a');      -- ERROR
-ERROR:  COPY delimiter cannot be "a"
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', escape '-');         -- ERROR
-ERROR:  COPY escape available only in CSV mode
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', quote '-', null '=-=');   -- ERROR
-ERROR:  CSV quote character must not appear in the NULL specification
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '-', null '=-=');    -- ERROR
-ERROR:  COPY delimiter must not appear in the NULL specification
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '-', quote '-');    -- ERROR
-ERROR:  COPY delimiter and quote must be different
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '---');     -- ERROR
-ERROR:  COPY delimiter must be a single one-byte character
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', quote '---');         -- ERROR
-ERROR:  COPY quote must be a single one-byte character
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', escape '---');        -- ERROR
-ERROR:  COPY escape must be a single one-byte character
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter '\');       -- ERROR
-ERROR:  COPY delimiter cannot be "\"
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter '.');       -- ERROR
-ERROR:  COPY delimiter cannot be "."
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter '1');       -- ERROR
-ERROR:  COPY delimiter cannot be "1"
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter 'a');       -- ERROR
-ERROR:  COPY delimiter cannot be "a"
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '
-');       -- ERROR
-ERROR:  COPY delimiter cannot be newline or carriage return
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', null '
-');       -- ERROR
-ERROR:  COPY null representation cannot use newline or carriage return
-CREATE FOREIGN TABLE tbl () SERVER file_server;  -- ERROR
-ERROR:  filename is required for file_fdw foreign tables
-CREATE FOREIGN TABLE agg_text (
-	a	int2,
-	b	float4
-) SERVER file_server
-OPTIONS (format 'text', filename '@abs_srcdir@/data/agg.data', delimiter '	', null '\N');
-GRANT SELECT ON agg_text TO file_fdw_user;
-CREATE FOREIGN TABLE agg_csv (
-	a	int2,
-	b	float4
-) SERVER file_server
-OPTIONS (format 'csv', filename '@abs_srcdir@/data/agg.csv', header 'true', delimiter ';', quote '@', escape '"', null '');
-CREATE FOREIGN TABLE agg_bad (
-	a	int2,
-	b	float4
-) SERVER file_server
-OPTIONS (format 'csv', filename '@abs_srcdir@/data/agg.bad', header 'true', delimiter ';', quote '@', escape '"', null '');
--- per-column options tests
-CREATE FOREIGN TABLE text_csv (
-    word1 text OPTIONS (force_not_null 'true'),
-    word2 text OPTIONS (force_not_null 'off')
-) SERVER file_server
-OPTIONS (format 'text', filename '@abs_srcdir@/data/text.csv', null 'NULL');
-SELECT * FROM text_csv; -- ERROR
-ERROR:  COPY force not null available only in CSV mode
-ALTER FOREIGN TABLE text_csv OPTIONS (SET format 'csv');
-SELECT * FROM text_csv;
- word1 | word2 
--------+-------
- AAA   | aaa
- XYZ   | xyz
- NULL  | 
- ABC   | abc
-(4 rows)
-
--- force_not_null is not allowed to be specified at any foreign object level:
-ALTER FOREIGN DATA WRAPPER file_fdw OPTIONS (ADD force_not_null '*'); -- ERROR
-ERROR:  invalid option "force_not_null"
-HINT:  There are no valid options in this context.
-ALTER SERVER file_server OPTIONS (ADD force_not_null '*'); -- ERROR
-ERROR:  invalid option "force_not_null"
-HINT:  There are no valid options in this context.
-CREATE USER MAPPING FOR public SERVER file_server OPTIONS (force_not_null '*'); -- ERROR
-ERROR:  invalid option "force_not_null"
-HINT:  There are no valid options in this context.
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (force_not_null '*'); -- ERROR
-ERROR:  invalid option "force_not_null"
-HINT:  Valid options in this context are: filename, format, header, delimiter, quote, escape, null, encoding
--- basic query tests
-SELECT * FROM agg_text WHERE b > 10.0 ORDER BY a;
-  a  |   b    
------+--------
-  42 | 324.78
- 100 | 99.097
-(2 rows)
-
-SELECT * FROM agg_csv ORDER BY a;
-  a  |    b    
------+---------
-   0 | 0.09561
-  42 |  324.78
- 100 |  99.097
-(3 rows)
-
-SELECT * FROM agg_csv c JOIN agg_text t ON (t.a = c.a) ORDER BY c.a;
-  a  |    b    |  a  |    b    
------+---------+-----+---------
-   0 | 0.09561 |   0 | 0.09561
-  42 |  324.78 |  42 |  324.78
- 100 |  99.097 | 100 |  99.097
-(3 rows)
-
--- error context report tests
-SELECT * FROM agg_bad;               -- ERROR
-ERROR:  invalid input syntax for type real: "aaa"
-CONTEXT:  COPY agg_bad, line 3, column b: "aaa"
--- misc query tests
-\t on
-EXPLAIN (VERBOSE, COSTS FALSE) SELECT * FROM agg_csv;
- Foreign Scan on public.agg_csv
-   Output: a, b
-   Foreign File: @abs_srcdir@/data/agg.csv
-
-\t off
-PREPARE st(int) AS SELECT * FROM agg_csv WHERE a = $1;
-EXECUTE st(100);
-  a  |   b    
------+--------
- 100 | 99.097
+CREATE FOREIGN TABLE test_validator_filename_missing () 
+	SERVER orc_server; -- ERROR
+ERROR:  filename is required for orc_fdw foreign tables
+CREATE FOREIGN TABLE test_validator_invalid_option () 
+	SERVER orc_server 
+	OPTIONS(filename 'bigrow.orc', bad_option_name '1'); -- ERROR
+ERROR:  invalid option "bad_option_name"
+HINT:  Valid options in this context are: filename
+-- data conversion tests
+DROP FOREIGN TABLE IF EXISTS bigrow;
+NOTICE:  foreign table "bigrow" does not exist, skipping
+CREATE FOREIGN TABLE bigrow(
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT,
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE,
+    timestamp1 TIMESTAMP
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
+SELECT count(*) FROM bigrow;
+ count 
+-------
+  2000
 (1 row)
 
-EXECUTE st(100);
-  a  |   b    
------+--------
- 100 | 99.097
+SELECT count(short1) FROM bigrow;
+ count 
+-------
+  2000
 (1 row)
 
-DEALLOCATE st;
--- tableoid
-SELECT tableoid::regclass, b FROM agg_csv;
- tableoid |    b    
-----------+---------
- agg_csv  |  99.097
- agg_csv  | 0.09561
- agg_csv  |  324.78
-(3 rows)
+SELECT * FROM bigrow WHERE short1 > 10000;
+ boolean1 | short1 | integer1 | long1 | list1 | float1 | double1 | string1 | list2 | date1 | timestamp1 
+----------+--------+----------+-------+-------+--------+---------+---------+-------+-------+------------
+(0 rows)
 
--- updates aren't supported
-INSERT INTO agg_csv VALUES(1,2.0);
-ERROR:  cannot change foreign table "agg_csv"
-UPDATE agg_csv SET a = 1;
-ERROR:  cannot change foreign table "agg_csv"
-DELETE FROM agg_csv WHERE a = 100;
-ERROR:  cannot change foreign table "agg_csv"
-SELECT * FROM agg_csv FOR UPDATE OF agg_csv;
-ERROR:  SELECT FOR UPDATE/SHARE cannot be used with foreign table "agg_csv"
-LINE 1: SELECT * FROM agg_csv FOR UPDATE OF agg_csv;
-                                            ^
--- but this should be ignored
-SELECT * FROM agg_csv FOR UPDATE;
-  a  |    b    
------+---------
- 100 |  99.097
-   0 | 0.09561
-  42 |  324.78
-(3 rows)
+SELECT * FROM bigrow WHERE integer1 < 0;
+ boolean1 | short1 | integer1 | long1 | list1 | float1 | double1 | string1 | list2 | date1 | timestamp1 
+----------+--------+----------+-------+-------+--------+---------+---------+-------+-------+------------
+(0 rows)
 
--- privilege tests
-SET ROLE file_fdw_superuser;
-SELECT * FROM agg_text ORDER BY a;
-  a  |    b    
------+---------
-   0 | 0.09561
-  42 |  324.78
-  56 |     7.8
- 100 |  99.097
-(4 rows)
+SELECT * FROM bigrow WHERE long1 = 500;
+ boolean1 | short1 | integer1 | long1 |    list1     | float1 | double1 | string1  |        list2         |   date1    |     timestamp1      
+----------+--------+----------+-------+--------------+--------+---------+----------+----------------------+------------+---------------------
+ t        |    500 |      500 |   500 | {5000,10000} |    500 |    -500 | string_0 | {citus_500,data_500} | 2014-05-16 | 2014-05-16 02:00:00
+(1 row)
 
-SET ROLE file_fdw_user;
-SELECT * FROM agg_text ORDER BY a;
-  a  |    b    
------+---------
-   0 | 0.09561
-  42 |  324.78
-  56 |     7.8
- 100 |  99.097
-(4 rows)
+SELECT * FROM bigrow WHERE string1 = 'string_7';
+ boolean1 | short1 | integer1 | long1 |     list1     | float1 | double1 | string1  |         list2          |   date1    |     timestamp1      
+----------+--------+----------+-------+---------------+--------+---------+----------+------------------------+------------+---------------------
+ t        |      7 |        7 |     7 | {70,140}      |      7 |      -7 | string_7 | {citus_7,data_7}       | 2013-01-08 | 2013-01-08 02:00:00
+ t        |    107 |      107 |   107 | {1070,2140}   |    107 |    -107 | string_7 | {citus_107,data_107}   | 2013-04-18 | 2013-04-18 02:00:00
+ t        |    207 |      207 |   207 | {2070,4140}   |    207 |    -207 | string_7 | {citus_207,data_207}   | 2013-07-27 | 2013-07-27 02:00:00
+ t        |    307 |      307 |   307 | {3070,6140}   |    307 |    -307 | string_7 | {citus_307,data_307}   | 2013-11-04 | 2013-11-04 02:00:00
+ t        |    407 |      407 |   407 | {4070,8140}   |    407 |    -407 | string_7 | {citus_407,data_407}   | 2014-02-12 | 2014-02-12 02:00:00
+ t        |    507 |      507 |   507 | {5070,10140}  |    507 |    -507 | string_7 | {citus_507,data_507}   | 2014-05-23 | 2014-05-23 02:00:00
+ t        |    607 |      607 |   607 | {6070,12140}  |    607 |    -607 | string_7 | {citus_607,data_607}   | 2014-08-31 | 2014-08-31 02:00:00
+ t        |    707 |      707 |   707 | {7070,14140}  |    707 |    -707 | string_7 | {citus_707,data_707}   | 2014-12-09 | 2014-12-09 02:00:00
+ t        |    807 |      807 |   807 | {8070,16140}  |    807 |    -807 | string_7 | {citus_807,data_807}   | 2015-03-19 | 2015-03-19 02:00:00
+ t        |    907 |      907 |   907 | {9070,18140}  |    907 |    -907 | string_7 | {citus_907,data_907}   | 2015-06-27 | 2015-06-27 02:00:00
+ t        |   1007 |     1007 |  1007 | {10070,20140} |   1007 |   -1007 | string_7 | {citus_1007,data_1007} | 2015-10-05 | 2015-10-05 02:00:00
+ t        |   1107 |     1107 |  1107 | {11070,22140} |   1107 |   -1107 | string_7 | {citus_1107,data_1107} | 2016-01-13 | 2016-01-13 02:00:00
+ t        |   1207 |     1207 |  1207 | {12070,24140} |   1207 |   -1207 | string_7 | {citus_1207,data_1207} | 2016-04-22 | 2016-04-22 02:00:00
+ t        |   1307 |     1307 |  1307 | {13070,26140} |   1307 |   -1307 | string_7 | {citus_1307,data_1307} | 2016-07-31 | 2016-07-31 02:00:00
+ t        |   1407 |     1407 |  1407 | {14070,28140} |   1407 |   -1407 | string_7 | {citus_1407,data_1407} | 2016-11-08 | 2016-11-08 02:00:00
+ t        |   1507 |     1507 |  1507 | {15070,30140} |   1507 |   -1507 | string_7 | {citus_1507,data_1507} | 2017-02-16 | 2017-02-16 02:00:00
+ t        |   1607 |     1607 |  1607 | {16070,32140} |   1607 |   -1607 | string_7 | {citus_1607,data_1607} | 2017-05-27 | 2017-05-27 02:00:00
+ t        |   1707 |     1707 |  1707 | {17070,34140} |   1707 |   -1707 | string_7 | {citus_1707,data_1707} | 2017-09-04 | 2017-09-04 02:00:00
+ t        |   1807 |     1807 |  1807 | {18070,36140} |   1807 |   -1807 | string_7 | {citus_1807,data_1807} | 2017-12-13 | 2017-12-13 02:00:00
+ t        |   1907 |     1907 |  1907 | {19070,38140} |   1907 |   -1907 | string_7 | {citus_1907,data_1907} | 2018-03-23 | 2018-03-23 02:00:00
+(20 rows)
 
-SET ROLE no_priv_user;
-SELECT * FROM agg_text ORDER BY a;   -- ERROR
-ERROR:  permission denied for relation agg_text
-SET ROLE file_fdw_user;
-\t on
-EXPLAIN (VERBOSE, COSTS FALSE) SELECT * FROM agg_text WHERE a > 0;
- Foreign Scan on public.agg_text
-   Output: a, b
-   Filter: (agg_text.a > 0)
-   Foreign File: @abs_srcdir@/data/agg.data
+SELECT * FROM bigrow WHERE date1 >= '2018-01-01' AND date1 <= date '2018-01-01' + interval '1' month limit 10;
+ boolean1 | short1 | integer1 | long1 |     list1     | float1 | double1 |  string1  |         list2          |   date1    |     timestamp1      
+----------+--------+----------+-------+---------------+--------+---------+-----------+------------------------+------------+---------------------
+ t        |   1826 |     1826 |  1826 | {18260,36520} |   1826 |   -1826 | string_26 | {citus_1826,data_1826} | 2018-01-01 | 2018-01-01 02:00:00
+ t        |   1827 |     1827 |  1827 | {18270,36540} |   1827 |   -1827 | string_27 | {citus_1827,data_1827} | 2018-01-02 | 2018-01-02 02:00:00
+ t        |   1828 |     1828 |  1828 | {18280,36560} |   1828 |   -1828 | string_28 | {citus_1828,data_1828} | 2018-01-03 | 2018-01-03 02:00:00
+ t        |   1829 |     1829 |  1829 | {18290,36580} |   1829 |   -1829 | string_29 | {citus_1829,data_1829} | 2018-01-04 | 2018-01-04 02:00:00
+ t        |   1830 |     1830 |  1830 | {18300,36600} |   1830 |   -1830 | string_30 | {citus_1830,data_1830} | 2018-01-05 | 2018-01-05 02:00:00
+ t        |   1831 |     1831 |  1831 | {18310,36620} |   1831 |   -1831 | string_31 | {citus_1831,data_1831} | 2018-01-06 | 2018-01-06 02:00:00
+ t        |   1832 |     1832 |  1832 | {18320,36640} |   1832 |   -1832 | string_32 | {citus_1832,data_1832} | 2018-01-07 | 2018-01-07 02:00:00
+ t        |   1833 |     1833 |  1833 | {18330,36660} |   1833 |   -1833 | string_33 | {citus_1833,data_1833} | 2018-01-08 | 2018-01-08 02:00:00
+ t        |   1834 |     1834 |  1834 | {18340,36680} |   1834 |   -1834 | string_34 | {citus_1834,data_1834} | 2018-01-09 | 2018-01-09 02:00:00
+ t        |   1835 |     1835 |  1835 | {18350,36700} |   1835 |   -1835 | string_35 | {citus_1835,data_1835} | 2018-01-10 | 2018-01-10 02:00:00
+(10 rows)
 
-\t off
--- privilege tests for object
-SET ROLE file_fdw_superuser;
-ALTER FOREIGN TABLE agg_text OWNER TO file_fdw_user;
-ALTER FOREIGN TABLE agg_text OPTIONS (SET format 'text');
-SET ROLE file_fdw_user;
-ALTER FOREIGN TABLE agg_text OPTIONS (SET format 'text');
-ERROR:  only superuser can change options of a file_fdw foreign table
-SET ROLE file_fdw_superuser;
--- cleanup
-RESET ROLE;
-DROP EXTENSION file_fdw CASCADE;
-NOTICE:  drop cascades to 8 other objects
-DETAIL:  drop cascades to server file_server
-drop cascades to user mapping for file_fdw_user
-drop cascades to user mapping for file_fdw_superuser
-drop cascades to user mapping for no_priv_user
-drop cascades to foreign table agg_text
-drop cascades to foreign table agg_csv
-drop cascades to foreign table agg_bad
-drop cascades to foreign table text_csv
-DROP ROLE file_fdw_superuser, file_fdw_user, no_priv_user;
+-- tests involving customer reviews data
+DROP FOREIGN TABLE IF EXISTS customer_reviews;
+NOTICE:  foreign table "customer_reviews" does not exist, skipping
+CREATE FOREIGN TABLE customer_reviews
+(
+    customer_id TEXT not null,
+    review_date DATE not null,
+    review_rating INTEGER not null,
+    review_votes INTEGER,
+    review_helpful_votes INTEGER,
+    product_id CHAR(10) not null,
+    product_title TEXT not null,
+    product_sales_rank BIGINT,
+    product_group TEXT,
+    product_category TEXT,
+    product_subcategory TEXT,
+    similar_product_ids CHAR(10)[]
+)
+SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/customer_reviews_1998_1000.orc');
+-- How people rate your products?
+SELECT
+    extract(month from review_date) AS review_month,
+    round(avg(review_rating), 2),
+    count(*)
+FROM
+    customer_reviews
+GROUP BY
+    review_month
+ORDER BY
+    review_month;
+ review_month | round | count 
+--------------+-------+-------
+            1 |  4.48 |   224
+            2 |  4.42 |   149
+            6 |  4.50 |     2
+            7 |  4.63 |    71
+            8 |  4.61 |    75
+            9 |  4.57 |   101
+           10 |  4.42 |   130
+           11 |  4.59 |   143
+           12 |  4.54 |   105
+(9 rows)
+
+-- Do we have a correlation between a book's title's length and its review ratings?
+SELECT
+    width_bucket(length(product_title), 1, 50, 5) title_length_bucket,
+    round(avg(review_rating), 2) AS review_average,
+    count(*)
+FROM
+   customer_reviews
+WHERE
+    product_group = 'Book'
+GROUP BY
+    title_length_bucket
+ORDER BY
+    title_length_bucket;
+ title_length_bucket | review_average | count 
+---------------------+----------------+-------
+                   1 |           4.50 |   135
+                   2 |           4.48 |   364
+                   3 |           4.53 |   190
+                   4 |           4.52 |   151
+                   5 |           4.60 |    99
+                   6 |           4.62 |    55
+(6 rows)
+
+-- Does the average review rating change by product category?
+SELECT
+    product_category,
+    round(avg(review_rating), 2),
+    count(*)
+FROM
+    customer_reviews
+GROUP BY
+    product_category
+ORDER BY
+    count(*) DESC, product_category
+LIMIT 20;
+     product_category      | round | count 
+---------------------------+-------+-------
+ Science Fiction & Fantasy |  4.44 |   189
+ Literature & Fiction      |  4.62 |   149
+ Mystery & Thrillers       |  3.79 |    71
+ Books on Tape             |  4.75 |    65
+ Children's Books          |  4.49 |    65
+ Nonfiction                |  4.56 |    57
+ Religion & Spirituality   |  4.67 |    52
+ Science                   |  4.47 |    36
+ Health, Mind & Body       |  4.97 |    30
+ Computers & Internet      |  4.50 |    26
+ Horror                    |  4.32 |    25
+ Business & Investing      |  4.57 |    21
+ Biographies & Memoirs     |  4.55 |    20
+ History                   |  4.45 |    20
+ Teens                     |  4.26 |    19
+ Entertainment             |  4.89 |    18
+ Home & Garden             |  4.24 |    17
+ Reference                 |  4.71 |    14
+ Romance                   |  4.77 |    13
+ Sports                    |  4.50 |    10
+(20 rows)
+
+-- error scenarios
+DROP FOREIGN TABLE IF EXISTS test_missing_file;
+NOTICE:  foreign table "test_missing_file" does not exist, skipping
+CREATE FOREIGN TABLE test_missing_file () SERVER orc_server 
+	OPTIONS (filename '@abs_srcdir@/data/missing_file.orc');
+SELECT * FROM test_missing_file limit 10; -- ERROR
+ERROR:  Error opening file @abs_srcdir@/data/missing_file.orc
+DROP FOREIGN TABLE IF EXISTS test_table_definition_mismatch;
+NOTICE:  foreign table "test_table_definition_mismatch" does not exist, skipping
+CREATE FOREIGN TABLE test_table_definition_mismatch (type CHAR(6)) SERVER orc_server
+	OPTIONS (filename '@abs_srcdir@/data/bigrow.orc');
+SELECT * FROM test_table_definition_mismatch limit 10; -- ERROR
+ERROR:  Error occurred while reading column 1: ORC and PSQL types do not match, ORC type is BOOLEAN
+DROP FOREIGN TABLE IF EXISTS test_less_column_is_defined;
+NOTICE:  foreign table "test_less_column_is_defined" does not exist, skipping
+CREATE FOREIGN TABLE test_less_column_is_defined (
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT,
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
+SELECT * FROM test_less_column_is_defined limit 10; -- ERROR
+ERROR:  Column count in table definition does not match with ORC file.
+DROP FOREIGN TABLE IF EXISTS test_more_column_is_defined;
+NOTICE:  foreign table "test_more_column_is_defined" does not exist, skipping
+CREATE FOREIGN TABLE test_more_column_is_defined (
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT,
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE,
+    timestamp1 TIMESTAMP,
+    additionalField TEXT
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
+SELECT * FROM test_more_column_is_defined limit 10; -- ERROR
+ERROR:  Table definition has more columns than the ORC file
+DROP FOREIGN TABLE IF EXISTS test_int_range_check;
+NOTICE:  foreign table "test_int_range_check" does not exist, skipping
+CREATE FOREIGN TABLE test_int_range_check (
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT2, -- this should be int32 or bigger
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE,
+    timestamp1 TIMESTAMP,
+    additionalField TEXT
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
+SELECT * FROM test_int_range_check limit 10; -- ERROR
+ERROR:  Error occurred while reading column 3: ORC and PSQL types do not match, ORC type is INT

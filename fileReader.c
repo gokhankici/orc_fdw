@@ -496,6 +496,11 @@ StructFieldReaderAllocate(StructFieldReader *reader, Footer *footer, List *colum
 		}
 	}
 
+	if (listCell != NULL)
+	{
+		LogError("Table definition has more columns than the ORC file");
+	}
+
 	return 0;
 }
 
@@ -518,6 +523,7 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 	int indexBufferLength = 0;
 	int streamNo = 0;
 	char *indexBuffer = NULL;
+	int result = 0;
 
 	currentIndexOffset = stripe->offset;
 	currentDataOffset = stripe->offset + stripe->indexlength;
@@ -605,8 +611,22 @@ FieldReaderInit(FieldReader *fieldReader, FILE *file, StripeInformation *stripe,
 	currentDataOffset = stripe->offset + stripe->indexlength;
 
 	/* initialize data stream readers now */
-	return FieldReaderInitHelper(fieldReader, file, &currentDataOffset, &streamNo, stripeFooter,
+	result = FieldReaderInitHelper(fieldReader, file, &currentDataOffset, &streamNo, stripeFooter,
 			parameters);
+
+	if (result)
+	{
+		LogError("Error occured while initializing table reader.");
+		return -1;
+	}
+
+	if (streamNo != stripeFooter->n_streams)
+	{
+		LogError("Invalid ORC file. ORC column count doesn't match with table definition.");	
+		return -1;
+	}
+
+	return 0;
 }
 
 /**
@@ -660,6 +680,7 @@ FieldReaderInitHelper(FieldReader *fieldReader, FILE *file, long *currentDataOff
 
 		if (*streamNo >= totalStreamCount)
 		{
+			LogError("Invalid ORC file. ORC column count doesn't match with table definition.");	
 			return -1;
 		}
 
@@ -689,6 +710,7 @@ FieldReaderInitHelper(FieldReader *fieldReader, FILE *file, long *currentDataOff
 
 			if (*streamNo >= totalStreamCount)
 			{
+				LogError("Invalid ORC file. ORC column count doesn't match with table definition.");
 				return -1;
 			}
 
@@ -727,6 +749,7 @@ FieldReaderInitHelper(FieldReader *fieldReader, FILE *file, long *currentDataOff
 
 				if (result)
 				{
+					LogError2("Error occured while initializing column %d.", fieldIndex + 1);
 					return -1;
 				}
 			}
@@ -793,6 +816,7 @@ FieldReaderInitHelper(FieldReader *fieldReader, FILE *file, long *currentDataOff
 			/* check if there exists enough stream for the current field */
 			if (*streamNo + dataStreamCount > totalStreamCount)
 			{
+				LogError("Invalid ORC file. ORC column count doesn't match with table definition.");
 				return -1;
 			}
 

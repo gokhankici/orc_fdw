@@ -24,3 +24,13 @@ out/*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Eclipse stuff
+###############
+.cproject
+.project
+
+.deps/
+log/
+results/
+tmp_check/

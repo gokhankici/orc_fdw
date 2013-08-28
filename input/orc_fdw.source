@@ -1,148 +1,186 @@
 --
--- Test foreign-data wrapper file_fdw.
+-- Test orc foreign data wrapper.
 --
 
--- Clean up in case a prior regression run failed
-SET client_min_messages TO 'error';
-DROP ROLE IF EXISTS file_fdw_superuser, file_fdw_user, no_priv_user;
-RESET client_min_messages;
+-- Settings to make the result deterministic
+SET datestyle = "ISO, YMD";
 
-CREATE ROLE file_fdw_superuser LOGIN SUPERUSER; -- is a superuser
-CREATE ROLE file_fdw_user LOGIN;                -- has priv and user mapping
-CREATE ROLE no_priv_user LOGIN;                 -- has priv but no user mapping
 
--- Install file_fdw
-CREATE EXTENSION file_fdw;
+-- Install json_fdw
+CREATE EXTENSION orc_fdw;
 
--- file_fdw_superuser owns fdw-related objects
-SET ROLE file_fdw_superuser;
-CREATE SERVER file_server FOREIGN DATA WRAPPER file_fdw;
+CREATE SERVER orc_server FOREIGN DATA WRAPPER orc_fdw;
 
--- privilege tests
-SET ROLE file_fdw_user;
-CREATE FOREIGN DATA WRAPPER file_fdw2 HANDLER file_fdw_handler VALIDATOR file_fdw_validator;   -- ERROR
-CREATE SERVER file_server2 FOREIGN DATA WRAPPER file_fdw;   -- ERROR
-CREATE USER MAPPING FOR file_fdw_user SERVER file_server;   -- ERROR
-
-SET ROLE file_fdw_superuser;
-GRANT USAGE ON FOREIGN SERVER file_server TO file_fdw_user;
-
-SET ROLE file_fdw_user;
-CREATE USER MAPPING FOR file_fdw_user SERVER file_server;
-
--- create user mappings and grant privilege to test users
-SET ROLE file_fdw_superuser;
-CREATE USER MAPPING FOR file_fdw_superuser SERVER file_server;
-CREATE USER MAPPING FOR no_priv_user SERVER file_server;
 
 -- validator tests
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'xml');  -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', header 'true');      -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', quote ':');          -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', escape ':');         -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'binary', header 'true');    -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'binary', quote ':');        -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'binary', escape ':');       -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter 'a');      -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', escape '-');         -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', quote '-', null '=-=');   -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '-', null '=-=');    -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '-', quote '-');    -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '---');     -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', quote '---');         -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', escape '---');        -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter '\');       -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter '.');       -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter '1');       -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'text', delimiter 'a');       -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', delimiter '
-');       -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (format 'csv', null '
-');       -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server;  -- ERROR
+CREATE FOREIGN TABLE test_validator_filename_missing () 
+	SERVER orc_server; -- ERROR
 
-CREATE FOREIGN TABLE agg_text (
-	a	int2,
-	b	float4
-) SERVER file_server
-OPTIONS (format 'text', filename '@abs_srcdir@/data/agg.data', delimiter '	', null '\N');
-GRANT SELECT ON agg_text TO file_fdw_user;
-CREATE FOREIGN TABLE agg_csv (
-	a	int2,
-	b	float4
-) SERVER file_server
-OPTIONS (format 'csv', filename '@abs_srcdir@/data/agg.csv', header 'true', delimiter ';', quote '@', escape '"', null '');
-CREATE FOREIGN TABLE agg_bad (
-	a	int2,
-	b	float4
-) SERVER file_server
-OPTIONS (format 'csv', filename '@abs_srcdir@/data/agg.bad', header 'true', delimiter ';', quote '@', escape '"', null '');
+CREATE FOREIGN TABLE test_validator_invalid_option () 
+	SERVER orc_server 
+	OPTIONS(filename 'bigrow.orc', bad_option_name '1'); -- ERROR
 
--- per-column options tests
-CREATE FOREIGN TABLE text_csv (
-    word1 text OPTIONS (force_not_null 'true'),
-    word2 text OPTIONS (force_not_null 'off')
-) SERVER file_server
-OPTIONS (format 'text', filename '@abs_srcdir@/data/text.csv', null 'NULL');
-SELECT * FROM text_csv; -- ERROR
-ALTER FOREIGN TABLE text_csv OPTIONS (SET format 'csv');
-SELECT * FROM text_csv;
 
--- force_not_null is not allowed to be specified at any foreign object level:
-ALTER FOREIGN DATA WRAPPER file_fdw OPTIONS (ADD force_not_null '*'); -- ERROR
-ALTER SERVER file_server OPTIONS (ADD force_not_null '*'); -- ERROR
-CREATE USER MAPPING FOR public SERVER file_server OPTIONS (force_not_null '*'); -- ERROR
-CREATE FOREIGN TABLE tbl () SERVER file_server OPTIONS (force_not_null '*'); -- ERROR
+-- data conversion tests
+DROP FOREIGN TABLE IF EXISTS bigrow;
+CREATE FOREIGN TABLE bigrow(
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT,
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE,
+    timestamp1 TIMESTAMP
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
 
--- basic query tests
-SELECT * FROM agg_text WHERE b > 10.0 ORDER BY a;
-SELECT * FROM agg_csv ORDER BY a;
-SELECT * FROM agg_csv c JOIN agg_text t ON (t.a = c.a) ORDER BY c.a;
+SELECT count(*) FROM bigrow;
 
--- error context report tests
-SELECT * FROM agg_bad;               -- ERROR
+SELECT count(short1) FROM bigrow;
 
--- misc query tests
-\t on
-EXPLAIN (VERBOSE, COSTS FALSE) SELECT * FROM agg_csv;
-\t off
-PREPARE st(int) AS SELECT * FROM agg_csv WHERE a = $1;
-EXECUTE st(100);
-EXECUTE st(100);
-DEALLOCATE st;
+SELECT * FROM bigrow WHERE short1 > 10000;
 
--- tableoid
-SELECT tableoid::regclass, b FROM agg_csv;
+SELECT * FROM bigrow WHERE integer1 < 0;
 
--- updates aren't supported
-INSERT INTO agg_csv VALUES(1,2.0);
-UPDATE agg_csv SET a = 1;
-DELETE FROM agg_csv WHERE a = 100;
-SELECT * FROM agg_csv FOR UPDATE OF agg_csv;
--- but this should be ignored
-SELECT * FROM agg_csv FOR UPDATE;
+SELECT * FROM bigrow WHERE long1 = 500;
 
--- privilege tests
-SET ROLE file_fdw_superuser;
-SELECT * FROM agg_text ORDER BY a;
-SET ROLE file_fdw_user;
-SELECT * FROM agg_text ORDER BY a;
-SET ROLE no_priv_user;
-SELECT * FROM agg_text ORDER BY a;   -- ERROR
-SET ROLE file_fdw_user;
-\t on
-EXPLAIN (VERBOSE, COSTS FALSE) SELECT * FROM agg_text WHERE a > 0;
-\t off
+SELECT * FROM bigrow WHERE string1 = 'string_7';
 
--- privilege tests for object
-SET ROLE file_fdw_superuser;
-ALTER FOREIGN TABLE agg_text OWNER TO file_fdw_user;
-ALTER FOREIGN TABLE agg_text OPTIONS (SET format 'text');
-SET ROLE file_fdw_user;
-ALTER FOREIGN TABLE agg_text OPTIONS (SET format 'text');
-SET ROLE file_fdw_superuser;
+SELECT * FROM bigrow WHERE date1 >= '2018-01-01' AND date1 <= date '2018-01-01' + interval '1' month limit 10;
 
--- cleanup
-RESET ROLE;
-DROP EXTENSION file_fdw CASCADE;
-DROP ROLE file_fdw_superuser, file_fdw_user, no_priv_user;
+
+-- tests involving customer reviews data
+DROP FOREIGN TABLE IF EXISTS customer_reviews;
+CREATE FOREIGN TABLE customer_reviews
+(
+    customer_id TEXT not null,
+    review_date DATE not null,
+    review_rating INTEGER not null,
+    review_votes INTEGER,
+    review_helpful_votes INTEGER,
+    product_id CHAR(10) not null,
+    product_title TEXT not null,
+    product_sales_rank BIGINT,
+    product_group TEXT,
+    product_category TEXT,
+    product_subcategory TEXT,
+    similar_product_ids CHAR(10)[]
+)
+SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/customer_reviews_1998_1000.orc');
+
+-- How people rate your products?
+
+SELECT
+    extract(month from review_date) AS review_month,
+    round(avg(review_rating), 2),
+    count(*)
+FROM
+    customer_reviews
+GROUP BY
+    review_month
+ORDER BY
+    review_month;
+
+-- Do we have a correlation between a book's title's length and its review ratings?
+
+SELECT
+    width_bucket(length(product_title), 1, 50, 5) title_length_bucket,
+    round(avg(review_rating), 2) AS review_average,
+    count(*)
+FROM
+   customer_reviews
+WHERE
+    product_group = 'Book'
+GROUP BY
+    title_length_bucket
+ORDER BY
+    title_length_bucket;
+
+-- Does the average review rating change by product category?
+
+SELECT
+    product_category,
+    round(avg(review_rating), 2),
+    count(*)
+FROM
+    customer_reviews
+GROUP BY
+    product_category
+ORDER BY
+    count(*) DESC, product_category
+LIMIT 20;
+
+
+-- error scenarios
+DROP FOREIGN TABLE IF EXISTS test_missing_file;
+CREATE FOREIGN TABLE test_missing_file () SERVER orc_server 
+	OPTIONS (filename '@abs_srcdir@/data/missing_file.orc');
+
+SELECT * FROM test_missing_file limit 10; -- ERROR
+
+DROP FOREIGN TABLE IF EXISTS test_table_definition_mismatch;
+CREATE FOREIGN TABLE test_table_definition_mismatch (type CHAR(6)) SERVER orc_server
+	OPTIONS (filename '@abs_srcdir@/data/bigrow.orc');
+
+SELECT * FROM test_table_definition_mismatch limit 10; -- ERROR
+
+DROP FOREIGN TABLE IF EXISTS test_less_column_is_defined;
+CREATE FOREIGN TABLE test_less_column_is_defined (
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT,
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
+
+SELECT * FROM test_less_column_is_defined limit 10; -- ERROR
+
+DROP FOREIGN TABLE IF EXISTS test_more_column_is_defined;
+CREATE FOREIGN TABLE test_more_column_is_defined (
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT,
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE,
+    timestamp1 TIMESTAMP,
+    additionalField TEXT
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
+
+SELECT * FROM test_more_column_is_defined limit 10; -- ERROR
+
+DROP FOREIGN TABLE IF EXISTS test_int_range_check;
+CREATE FOREIGN TABLE test_int_range_check (
+    boolean1 BOOLEAN,
+    short1 INT2,
+    integer1 INT2, -- this should be int32 or bigger
+    long1 INT8,
+    list1 INT[],
+    float1 FLOAT4,
+    double1 FLOAT8,
+    string1 VARCHAR,
+    list2 VARCHAR[],
+    date1 DATE,
+    timestamp1 TIMESTAMP,
+    additionalField TEXT
+) SERVER orc_server
+OPTIONS(filename '@abs_srcdir@/data/bigrow.orc');
+
+SELECT * FROM test_int_range_check limit 10; -- ERROR
+
