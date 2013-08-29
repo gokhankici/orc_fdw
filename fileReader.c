@@ -103,7 +103,7 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
 
 	if (postScript == NULL)
 	{
-		LogError("error unpacking incoming message\n");
+		LogError("Error occurred while unpacking postscript\n");
 		return NULL;
 	}
 
@@ -151,7 +151,7 @@ PostScriptInit(FILE *file, long *postScriptOffset, CompressionParameters *parame
  * @return NULL for failure, non-NULL for footer
  */
 Footer *
-FileFooterInit(FILE *file, int footerOffset, long footerSize, CompressionParameters *parameters)
+FileFooterInit(FILE *file, long footerOffset, long footerSize, CompressionParameters *parameters)
 {
 	Footer *footer = NULL;
 	FileStream *stream = NULL;
@@ -181,7 +181,7 @@ FileFooterInit(FILE *file, int footerOffset, long footerSize, CompressionParamet
 
 	if (footer == NULL)
 	{
-		LogError("error unpacking incoming message\n");
+		LogError("Error occured while unpacking file footer\n");
 		return NULL;
 	}
 

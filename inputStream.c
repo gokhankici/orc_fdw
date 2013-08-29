@@ -393,12 +393,11 @@ FileStreamInit(FILE *file, long offset, long limit, int bufferSize,
 		return NULL;
 	}
 
-	stream->bufferSize = bufferSize;
 	stream->compressionKind = kind;
 
 	stream->position = 0;
 	stream->length = 0;
-	stream->data = alloc(bufferSize);
+	stream->data = alloc(stream->bufferSize);
 	stream->allocatedMemory = stream->data;
 	stream->isNotCompressed = 0;
 

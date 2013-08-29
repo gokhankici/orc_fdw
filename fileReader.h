@@ -17,7 +17,7 @@
 #define OrcGetPSQLChildType(fieldReader)  get_element_type(fieldReader->psqlVariable->vartype)
 
 PostScript * PostScriptInit(FILE *file, long *postScriptSizeOffset, CompressionParameters *parameters);
-Footer * FileFooterInit(FILE *file, int footerOffset, long footerSize, CompressionParameters *parameters);
+Footer * FileFooterInit(FILE *file, long footerOffset, long footerSize, CompressionParameters *parameters);
 StripeFooter * StripeFooterInit(FILE *file, StripeInformation *stripeInfo, CompressionParameters *parameters);
 
 int FieldReaderAllocate(FieldReader *reader, Footer *footer, List *columns);
